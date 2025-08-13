@@ -287,5 +287,5 @@ MAP_REPO_TO_PARSER_PY = {
     "sphinx-doc/sphinx": parse_log_sphinx,
     "sympy/sympy": parse_log_sympy,
 
-    "graphql-python/graphene": parse_log_pytest,
+    "graphql-python/graphene": parse_log_pytest_v2,
 }
