@@ -916,6 +916,9 @@ SPECS_GRAPHENE = {
 SPECS_ARROW = {
     k: {
         "python": "3.9",
+        "pre_install": [
+            "sed -i '/^\s*pytest$/s/pytest/pytest -rA --continue-on-collection-errors/' Makefile",
+        ],
         "install": "make build39",
         "test_cmd": "make test",
     }
