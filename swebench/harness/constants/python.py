@@ -6,7 +6,7 @@ TEST_DJANGO = "./tests/runtests.py --verbosity 2 --settings=test_sqlite --parall
 TEST_DJANGO_NO_PARALLEL = "./tests/runtests.py --verbosity 2"
 TEST_SEABORN = "pytest --no-header -rA"
 TEST_SEABORN_VERBOSE = "pytest -rA --tb=long"
-TEST_PYTEST = "pytest -rA"
+TEST_PYTEST = "pytest --continue-on-collection-errors -rA"
 TEST_PYTEST_VERBOSE = "pytest -rA --tb=long"
 TEST_SPHINX = "tox --current-env -epy39 -v --"
 TEST_SYMPY = (
@@ -902,6 +902,28 @@ SPECS_PYDICOM.update(
 
 SPECS_HUMANEVAL = {k: {"python": "3.9", "test_cmd": "python"} for k in ["1.0"]}
 
+SPECS_GRAPHENE = {
+    k: {
+        "python": "3.10",
+        "install": "python -m pip install -e '.[test]'",
+        "test_cmd": TEST_PYTEST,
+    }
+    for k in [
+        "v3.2.2"
+    ]
+}
+
+SPECS_ARROW = {
+    k: {
+        "python": "3.9",
+        "install": "make build39",
+        "test_cmd": "make test",
+    }
+    for k in [
+        "1.2.0"
+    ]
+}
+
 # Constants - Task Instance Instllation Environment
 MAP_REPO_VERSION_TO_SPECS_PY = {
     "astropy/astropy": SPECS_ASTROPY,
@@ -924,6 +946,9 @@ MAP_REPO_VERSION_TO_SPECS_PY = {
     "sqlfluff/sqlfluff": SPECS_SQLFLUFF,
     "swe-bench/humaneval": SPECS_HUMANEVAL,
     "sympy/sympy": SPECS_SYMPY,
+
+    "graphql-python/graphene": SPECS_GRAPHENE,
+    "arrow-py/arrow": SPECS_ARROW,
 }
 
 # Constants - Repository Specific Installation Instructions

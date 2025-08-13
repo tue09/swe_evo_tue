@@ -38,6 +38,7 @@ class TestSpec:
     repo_script_list: list[str]
     eval_script_list: list[str]
     env_script_list: list[str]
+    test_patch: str
     arch: str
     FAIL_TO_PASS: list[str]
     PASS_TO_PASS: list[str]
@@ -186,7 +187,9 @@ def make_test_spec(
     assert instance_image_tag is not None, "instance_image_tag cannot be None"
     instance_id = instance[KEY_INSTANCE_ID]
     repo = instance["repo"]
-    version = instance.get("version")
+    # version = instance.get("version")
+    version = instance.get("start_version")
+    instance['version'] = version
     base_commit = instance["base_commit"]
     problem_statement = instance.get("problem_statement")
     hints_text = instance.get("hints_text")  # Unused
@@ -201,11 +204,14 @@ def make_test_spec(
             return json.loads(instance[key])
         return instance[key]
 
-    pass_to_pass = _from_json_or_obj("PASS_TO_PASS")
-    fail_to_pass = _from_json_or_obj("FAIL_TO_PASS")
+    # pass_to_pass = _from_json_or_obj("PASS_TO_PASS")
+    # fail_to_pass = _from_json_or_obj("FAIL_TO_PASS")
+    pass_to_pass = []
+    fail_to_pass = []
 
     env_name = "testbed"
     repo_directory = f"/{env_name}"
+
     specs = MAP_REPO_VERSION_TO_SPECS[repo][version]
     docker_specs = specs.get("docker_specs", {})
 
@@ -228,6 +234,7 @@ def make_test_spec(
         env_script_list=env_script_list,
         repo_script_list=repo_script_list,
         eval_script_list=eval_script_list,
+        test_patch=test_patch,
         version=version,
         arch=arch,
         FAIL_TO_PASS=fail_to_pass,

@@ -48,6 +48,7 @@ RUN echo "source /opt/miniconda3/etc/profile.d/conda.sh && conda activate testbe
 _DOCKERFILE_INSTANCE_PY = r"""FROM --platform={platform} {env_image_name}
 
 COPY ./setup_repo.sh /root/
+COPY ./test_patch.diff /root/
 RUN sed -i -e 's/\r$//' /root/setup_repo.sh
 RUN /bin/bash /root/setup_repo.sh
 

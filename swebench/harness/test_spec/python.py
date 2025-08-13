@@ -289,6 +289,10 @@ def make_repo_script_list_py(
 
     if "install" in specs:
         setup_commands.append(specs["install"])
+    
+    setup_commands.extend([
+        "git apply --verbose /root/test_patch.diff",
+    ])
 
     # If the setup modifies the repository in any way, it can be
     # difficult to get a clean diff.  This ensures that `git diff`
@@ -297,7 +301,7 @@ def make_repo_script_list_py(
     clean_diff_commands = [
         "git config --global user.email setup@swebench.config",
         "git config --global user.name SWE-bench",
-        "git commit --allow-empty -am SWE-bench",
+        "git commit --allow-empty -am SWE-bench --no-verify",
     ]
 
     setup_commands += clean_diff_commands
@@ -381,10 +385,10 @@ def make_eval_script_list_py(
     HEREDOC_DELIMITER = "EOF_114329324912"
     test_files = get_modified_files(test_patch)
     # Reset test files to the state they should be in before the patch.
-    reset_tests_command = f"git checkout {base_commit} {' '.join(test_files)}"
-    apply_test_patch_command = (
-        f"git apply -v - <<'{HEREDOC_DELIMITER}'\n{test_patch}\n{HEREDOC_DELIMITER}"
-    )
+    reset_tests_command = f"git checkout {' '.join(test_files)}"
+    # apply_test_patch_command = (
+    #     f"git apply -v - <<'{HEREDOC_DELIMITER}'\n{test_patch}\n{HEREDOC_DELIMITER}"
+    # )
     test_command = " ".join(
         [
             MAP_REPO_VERSION_TO_SPECS[instance["repo"]][instance["version"]][
@@ -414,7 +418,7 @@ def make_eval_script_list_py(
         eval_commands.append(specs["install"])
     eval_commands += [
         reset_tests_command,
-        apply_test_patch_command,
+        # apply_test_patch_command,
         f": '{START_TEST_OUTPUT}'",
         test_command,
         f": '{END_TEST_OUTPUT}'",

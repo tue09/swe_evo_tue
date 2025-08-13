@@ -286,4 +286,7 @@ MAP_REPO_TO_PARSER_PY = {
     "sqlfluff/sqlfluff": parse_log_sqlfluff,
     "sphinx-doc/sphinx": parse_log_sphinx,
     "sympy/sympy": parse_log_sympy,
+
+    "graphql-python/graphene": parse_log_pytest_v2,
+    "arrow-py/arrow": parse_log_pytest_v2,
 }

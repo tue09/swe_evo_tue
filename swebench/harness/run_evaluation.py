@@ -301,12 +301,13 @@ def run_instances(
 
     # print number of existing instance images
     instance_image_ids = {x.instance_image_key for x in test_specs}
-    existing_images = {
-        tag
-        for i in client.images.list(all=True)
-        for tag in i.tags
-        if tag in instance_image_ids
-    }
+    # existing_images = {
+    #     tag
+    #     for i in client.images.list(all=True)
+    #     for tag in i.tags
+    #     if tag in instance_image_ids
+    # }
+    existing_images = {}
     if not force_rebuild and len(existing_images):
         print(
             f"Found {len(existing_images)} existing instance images. Will reuse them."
@@ -480,12 +481,14 @@ def main(
     # load predictions as map of instance_id to prediction
     predictions = get_predictions_from_file(predictions_path, dataset_name, split)
     predictions = {pred[KEY_INSTANCE_ID]: pred for pred in predictions}
+    predictions = {k: v for k, v in predictions.items() if 'arrow' in k}
 
     # get dataset from predictions
     dataset = get_dataset_from_preds(
         dataset_name, split, instance_ids, predictions, run_id, rewrite_reports
     )
     full_dataset = load_swebench_dataset(dataset_name, split, instance_ids)
+    full_dataset = [i for i in full_dataset if 'arrow' in i[KEY_INSTANCE_ID]]
 
     if modal:
         # run instances on Modal
@@ -501,7 +504,7 @@ def main(
         resource.setrlimit(resource.RLIMIT_NOFILE, (open_file_limit, open_file_limit))
     client = docker.from_env()
 
-    existing_images = list_images(client)
+    # existing_images = list_images(client)
     if not dataset:
         print("No instances to run.")
     else:
@@ -523,7 +526,7 @@ def main(
         )
 
     # clean images + make final report
-    clean_images(client, existing_images, cache_level, clean)
+    # clean_images(client, existing_images, cache_level, clean)
     return make_run_report(predictions, full_dataset, run_id, client)
 
 

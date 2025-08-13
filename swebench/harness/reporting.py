@@ -77,7 +77,8 @@ def make_run_report(
 
     if client:
         # get remaining images and containers
-        images = list_images(client)
+        # images = list_images(client)
+        images = {}
         test_specs = list(map(make_test_spec, full_dataset))
         for spec in test_specs:
             image_name = spec.instance_image_key
