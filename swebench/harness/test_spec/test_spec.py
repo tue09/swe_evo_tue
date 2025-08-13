@@ -38,6 +38,7 @@ class TestSpec:
     repo_script_list: list[str]
     eval_script_list: list[str]
     env_script_list: list[str]
+    test_patch: str
     arch: str
     FAIL_TO_PASS: list[str]
     PASS_TO_PASS: list[str]
@@ -233,6 +234,7 @@ def make_test_spec(
         env_script_list=env_script_list,
         repo_script_list=repo_script_list,
         eval_script_list=eval_script_list,
+        test_patch=test_patch,
         version=version,
         arch=arch,
         FAIL_TO_PASS=fail_to_pass,

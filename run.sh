@@ -1,5 +1,6 @@
 python -m swebench.harness.run_evaluation \
     --dataset_name /bigdisk/minhpvt/sweworld/sweworld-v2/sweworld-v2/output/exported_dataset \
+    --namespace none \
     --predictions_path gold \
     --max_workers 1 \
     --run_id test
