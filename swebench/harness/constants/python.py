@@ -927,6 +927,21 @@ SPECS_ARROW = {
     ]
 }
 
+SPECS_SCIPY = {
+    k: {
+        "python": "3.11",
+        "pre_install": [
+            "apt-get update && apt-get install -y gcc g++ gfortran libopenblas-dev liblapack-dev pkg-config python3-pip python3-dev",
+            "python -m pip install pytest hypothesis",
+        ],
+        "install": "python -m pip install . --no-build-isolation && git submodule update --init --recursive",
+        "test_cmd": "python dev.py test -- -rA",
+    }
+    for k in [
+        "v1.15.3"
+    ]
+}
+
 # Constants - Task Instance Instllation Environment
 MAP_REPO_VERSION_TO_SPECS_PY = {
     "astropy/astropy": SPECS_ASTROPY,
@@ -952,6 +967,7 @@ MAP_REPO_VERSION_TO_SPECS_PY = {
 
     "graphql-python/graphene": SPECS_GRAPHENE,
     "arrow-py/arrow": SPECS_ARROW,
+    "scipy/scipy": SPECS_SCIPY,
 }
 
 # Constants - Repository Specific Installation Instructions
