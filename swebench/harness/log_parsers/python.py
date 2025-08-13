@@ -288,4 +288,5 @@ MAP_REPO_TO_PARSER_PY = {
     "sympy/sympy": parse_log_sympy,
 
     "graphql-python/graphene": parse_log_pytest_v2,
+    "arrow-py/arrow": parse_log_pytest_v2,
 }
