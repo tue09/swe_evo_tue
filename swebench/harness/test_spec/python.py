@@ -301,7 +301,7 @@ def make_repo_script_list_py(
     clean_diff_commands = [
         "git config --global user.email setup@swebench.config",
         "git config --global user.name SWE-bench",
-        "git commit --allow-empty -am SWE-bench",
+        "git commit --allow-empty -am SWE-bench --no-verify",
     ]
 
     setup_commands += clean_diff_commands

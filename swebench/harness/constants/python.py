@@ -913,6 +913,17 @@ SPECS_GRAPHENE = {
     ]
 }
 
+SPECS_ARROW = {
+    k: {
+        "python": "3.9",
+        "install": "make build39",
+        "test_cmd": "make test",
+    }
+    for k in [
+        "1.2.0"
+    ]
+}
+
 # Constants - Task Instance Instllation Environment
 MAP_REPO_VERSION_TO_SPECS_PY = {
     "astropy/astropy": SPECS_ASTROPY,
@@ -937,6 +948,7 @@ MAP_REPO_VERSION_TO_SPECS_PY = {
     "sympy/sympy": SPECS_SYMPY,
 
     "graphql-python/graphene": SPECS_GRAPHENE,
+    "arrow-py/arrow": SPECS_ARROW,
 }
 
 # Constants - Repository Specific Installation Instructions
