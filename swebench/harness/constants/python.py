@@ -930,6 +930,9 @@ SPECS_ARROW = {
 SPECS_SCIPY = {
     k: {
         "python": "3.11",
+        "pre_install": [
+            "apt update && apt install -y gcc g++ gfortran libopenblas-dev liblapack-dev pkg-config python3-pip python3-dev",
+        ],
         "install": "git submodule update --init --recursive && python -m pip install . --no-build-isolation",
         "test_cmd": "python dev.py test -- -rA",
     }
@@ -943,11 +946,15 @@ SPECS_NUMPY = {
         "python": "3.11",
         "packages": "gcc=12.1.0",
         "pre_install": [
-            "apt install -y gcc g++ gfortran libopenblas-dev liblapack-dev pkg-config python3-pip python3-dev",
+            "apt update && apt install -y gcc g++ gfortran libopenblas-dev liblapack-dev pkg-config python3-pip python3-dev",
         ],
         "install": "git submodule update --init --recursive && python -m pip install -r requirements/all_requirements.txt",
         "test_cmd": "spin test -- -rA",
     }
+    for k in [
+        "v2.1.3",
+        "v2.2.6",
+    ]
 }
 
 # Constants - Task Instance Instllation Environment
