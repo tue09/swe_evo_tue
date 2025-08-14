@@ -10,7 +10,7 @@ from swebench.harness.log_parsers.rust import MAP_REPO_TO_PARSER_RUST
 from collections import defaultdict
 from swebench.harness.log_parsers.python import parse_log_pytest_v2
 
-MAP_REPO_TO_PARSER = defaultdict(parse_log_pytest_v2)
+MAP_REPO_TO_PARSER = defaultdict(lambda: parse_log_pytest_v2)
 MAP_REPO_TO_PARSER.update({
     **MAP_REPO_TO_PARSER_C,
     **MAP_REPO_TO_PARSER_GO,
