@@ -11,7 +11,7 @@ python -m swebench.scripts.create_data https://github.com/qutip/qutip/compare/v5
 export TMPDIR=/bigdisk/minhpvt/sweworld/sweworld-v3/tmp
 python -m swebench.scripts.create_data https://github.com/scipy/scipy/compare/v1.15.3..v1.16.0 --output-dir output/new-data6
 python -m swebench.scripts.create_data https://github.com/numpy/numpy/compare/v2.1.3..v2.2.0 --output-dir output/new-data6
-
+python -m swebench.scripts.create_data https://github.com/numpy/numpy/compare/v2.2.6..v2.3.0 --output-dir output/new-data6
 python -m swebench.scripts.gather_data --input_dir output/new-data6 --output_dir output/exported_dataset
 
 git diff --binary v1.15.3..v1.16.0 -- '*test*' > test.patch
