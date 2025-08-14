@@ -291,7 +291,7 @@ def make_repo_script_list_py(
         setup_commands.append(specs["install"])
     
     setup_commands.extend([
-        "git apply --verbose /root/test_patch.diff",
+        "git apply --verbose --index /root/test_patch.diff",
     ])
 
     # If the setup modifies the repository in any way, it can be
