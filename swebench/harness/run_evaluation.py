@@ -165,7 +165,7 @@ def run_instance(
                 applied_patch = True
                 break
             else:
-                logger.info(f"Failed to apply patch to container: {git_apply_cmd}")
+                logger.info(f"Failed to apply patch to container: {git_apply_cmd} : {val.output.decode(UTF8)}")
         if not applied_patch:
             logger.info(f"{APPLY_PATCH_FAIL}:\n{val.output.decode(UTF8)}")
             raise EvaluationError(

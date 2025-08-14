@@ -917,7 +917,7 @@ SPECS_ARROW = {
     k: {
         "python": "3.9",
         "pre_install": [
-            "sed -i '/^\s*pytest$/s/pytest/pytest -rA --continue-on-collection-errors/' Makefile",
+            r"sed -i '/^\s*pytest$/s/pytest/pytest -rA --continue-on-collection-errors/' Makefile",
         ],
         "install": "make build39",
         "test_cmd": "make test",
@@ -930,16 +930,24 @@ SPECS_ARROW = {
 SPECS_SCIPY = {
     k: {
         "python": "3.11",
-        "pre_install": [
-            "apt-get update && apt-get install -y gcc g++ gfortran libopenblas-dev liblapack-dev pkg-config python3-pip python3-dev",
-            "python -m pip install pytest hypothesis",
-        ],
-        "install": "python -m pip install . --no-build-isolation && git submodule update --init --recursive",
+        "install": "git submodule update --init --recursive && python -m pip install . --no-build-isolation",
         "test_cmd": "python dev.py test -- -rA",
     }
     for k in [
         "v1.15.3"
     ]
+}
+
+SPECS_NUMPY = {
+    k: {
+        "python": "3.11",
+        "packages": "gcc=12.1.0",
+        "pre_install": [
+            "apt install -y gcc g++ gfortran libopenblas-dev liblapack-dev pkg-config python3-pip python3-dev",
+        ],
+        "install": "git submodule update --init --recursive && python -m pip install -r requirements/all_requirements.txt",
+        "test_cmd": "spin test -- -rA",
+    }
 }
 
 # Constants - Task Instance Instllation Environment
@@ -968,6 +976,7 @@ MAP_REPO_VERSION_TO_SPECS_PY = {
     "graphql-python/graphene": SPECS_GRAPHENE,
     "arrow-py/arrow": SPECS_ARROW,
     "scipy/scipy": SPECS_SCIPY,
+    "numpy/numpy": SPECS_NUMPY,
 }
 
 # Constants - Repository Specific Installation Instructions

@@ -172,3 +172,4 @@ notebooks/
 *logs/
 
 *.json
+/output/
