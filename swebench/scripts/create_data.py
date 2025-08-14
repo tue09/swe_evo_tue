@@ -12,6 +12,7 @@ import unidiff
 import tempfile
 import subprocess
 import shutil
+from .yaml_utils import dump_nice_yaml
 
 # Global cache for cloned repositories
 _repo_cache = {}
@@ -302,7 +303,7 @@ def main():
     output_filename = f"{owner}__{repo}_{base}_{end}.yaml"
     output_path = os.path.join(args.output_dir, output_filename)
     with open(output_path, 'w') as f:
-        out = yaml.dump_nice_yaml(output)
+        out = dump_nice_yaml(output)
         f.write(out)
     print(f"Output written to {output_path}")
     
