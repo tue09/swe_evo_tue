@@ -1,6 +1,6 @@
 python -m swebench.harness.run_evaluation \
     --dataset_name /bigdisk/minhpvt/sweworld/sweworld-v3/SWE-bench/output/exported_dataset \
-    --cache_level instance \
+    --cache_level instance --force_rebuild true \
     --namespace none \
     --predictions_path gold \
     --max_workers 1 \
