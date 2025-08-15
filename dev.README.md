@@ -17,4 +17,8 @@ python -m swebench.scripts.gather_data --input_dir output/new-data6 --output_dir
 git diff --binary v1.15.3..v1.16.0 -- '*test*' > test.patch
 git diff --binary v1.15.3..v1.16.0 -- ':(exclude)*test*' > code.patch
 
+
+python -m swebench.scripts.create_data https://github.com/numpy/numpy/compare/v2.1.3..v2.2.0 --output-dir output/new-data5
+python -m swebench.scripts.create_data https://github.com/scipy/scipy/compare/v1.15.3..v1.16.0 --output-dir output/new-data6
+python -m swebench.scripts.gather_data --input_dir output/new-data5 --output_dir output/exported_dataset
 ```

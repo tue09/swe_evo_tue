@@ -930,6 +930,7 @@ SPECS_ARROW = {
 SPECS_SCIPY = {
     k: {
         "python": "3.11",
+        "packages": "environment.yml",
         "pre_install": [
             "apt update && apt install -y gcc g++ gfortran libopenblas-dev liblapack-dev pkg-config python3-pip python3-dev",
         ],
@@ -943,8 +944,7 @@ SPECS_SCIPY = {
 
 SPECS_NUMPY = {
     k: {
-        "python": "3.11",
-        "packages": "gcc=12.1.0",
+        "python": "3.10",
         "pre_install": [
             "apt update && apt install -y gcc g++ gfortran libopenblas-dev liblapack-dev pkg-config python3-pip python3-dev",
         ],
@@ -1010,6 +1010,7 @@ MAP_REPO_TO_REQS_PATHS = {
 MAP_REPO_TO_ENV_YML_PATHS = {
     "matplotlib/matplotlib": ["environment.yml"],
     "pydata/xarray": ["ci/requirements/environment.yml", "environment.yml"],
+    "scipy/scipy": ["environment.yml"],
 }
 
 USE_X86_PY = {

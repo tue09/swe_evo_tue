@@ -481,14 +481,14 @@ def main(
     # load predictions as map of instance_id to prediction
     predictions = get_predictions_from_file(predictions_path, dataset_name, split)
     predictions = {pred[KEY_INSTANCE_ID]: pred for pred in predictions}
-    # predictions = {k: v for k, v in predictions.items() if 'scipy' in k}
+    # predictions = {k: v for k, v in predictions.items() if 'numpy' in k}
 
     # get dataset from predictions
     dataset = get_dataset_from_preds(
         dataset_name, split, instance_ids, predictions, run_id, rewrite_reports
     )
     full_dataset = load_swebench_dataset(dataset_name, split, instance_ids)
-    # full_dataset = [i for i in full_dataset if 'scipy' in i[KEY_INSTANCE_ID]]
+    # full_dataset = [i for i in full_dataset if 'numpy' in i[KEY_INSTANCE_ID]]
 
     if modal:
         # run instances on Modal
