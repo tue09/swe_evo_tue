@@ -394,7 +394,7 @@ def make_eval_script_list_py(
             MAP_REPO_VERSION_TO_SPECS[instance["repo"]][instance["version"]][
                 "test_cmd"
             ],
-            *get_test_directives(instance),
+            # *get_test_directives(instance),
         ]
     )
     eval_commands = [
