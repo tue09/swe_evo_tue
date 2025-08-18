@@ -935,7 +935,7 @@ SPECS_SCIPY = {
             "apt update && apt install -y gcc g++ gfortran libopenblas-dev liblapack-dev pkg-config python3-pip python3-dev",
         ],
         "install": "git submodule update --init --recursive && python -m pip install . --no-build-isolation",
-        "test_cmd": "python dev.py test -- -rA",
+        "test_cmd": "python dev.py test -- --continue-on-collection-errors -rA",
     }
     for k in [
         "v1.15.3"
@@ -949,7 +949,7 @@ SPECS_NUMPY = {
             "apt update && apt install -y gcc g++ gfortran libopenblas-dev liblapack-dev pkg-config python3-pip python3-dev",
         ],
         "install": "git submodule update --init --recursive && python -m pip install -r requirements/all_requirements.txt",
-        "test_cmd": "spin test -- -rA",
+        "test_cmd": "spin test -- --continue-on-collection-errors -rA",
     }
     for k in [
         "v2.1.3",
