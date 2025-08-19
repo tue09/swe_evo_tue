@@ -177,14 +177,14 @@ def cleanup_repo_cache():
 def extract_code_changes_from_diff(diff_content: str) -> str:
     try:
         patch_set = unidiff.PatchSet.from_string(diff_content)
-        code_changes = []
+        code_changes = unidiff.PatchSet(f=[])
         for patched_file in patch_set:
             file_path = patched_file.path.lower()
             if not any(pattern in file_path for pattern in ["test"]):
-                code_changes.append(str(patched_file))
+                code_changes.append(patched_file)
         if not code_changes:
             return ""
-        return "\n".join(code_changes)
+        return str(code_changes)
     except Exception as e:
         logger.error(f"Failed to parse code diff: {e}")
         return ""
@@ -192,14 +192,14 @@ def extract_code_changes_from_diff(diff_content: str) -> str:
 def extract_test_changes_from_diff(diff_content: str) -> str:
     try:
         patch_set = unidiff.PatchSet.from_string(diff_content)
-        test_changes = []
+        test_changes = unidiff.PatchSet(f=[])
         for patched_file in patch_set:
             file_path = patched_file.path.lower()
             if any(pattern in file_path for pattern in ["test"]):
-                test_changes.append(str(patched_file))
+                test_changes.append(patched_file)
         if not test_changes:
             return ""
-        return "\n".join(test_changes)
+        return str(test_changes)
     except Exception as e:
         logger.error(f"Failed to parse diff: {e}")
         return ""
@@ -251,8 +251,11 @@ def main():
     
     try:
         overall_diff_content = get_diff_between_releases(owner, repo, base, end)
+        # validate the diff content
+        unidiff.PatchSet.from_string(overall_diff_content)
         overall_patch_without_test = extract_code_changes_from_diff(overall_diff_content)
         overall_test_patch = extract_test_changes_from_diff(overall_diff_content)
+        unidiff.PatchSet.from_string(overall_test_patch)
         logger.info(f"[DIFF] Downloaded diff length: {len(overall_diff_content)}, test_patch length: {len(overall_test_patch)}, patch_without_test length: {len(overall_patch_without_test)}")
     except Exception as e:
         logger.error(f"[DIFF] Failed to fetch or parse diff: {e}")

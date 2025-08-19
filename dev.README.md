@@ -19,15 +19,19 @@ git diff --binary v1.15.3..v1.16.0 -- ':(exclude)*test*' > code.patch
 
 
 python -m swebench.scripts.create_data https://github.com/numpy/numpy/compare/v2.1.3..v2.2.0 --output-dir output/new-data5
-python -m swebench.scripts.create_data https://github.com/scipy/scipy/compare/v1.15.3..v1.16.0 --output-dir output/new-data6
+python -m swebench.scripts.create_data https://github.com/scipy/scipy/compare/v1.15.3..v1.16.0 --output-dir output/new-data5
+python -m swebench.scripts.create_data https://github.com/numpy/numpy/compare/v2.2.6..v2.3.0 --output-dir output/new-data5
 python -m swebench.scripts.gather_data --input_dir output/new-data5 --output_dir output/exported_dataset
 
 python -m swebench.harness.run_evaluation \
-    --dataset_name /bigdisk/minhpvt/sweworld/sweworld-v3/SWE-bench/output/exported_dataset \
-    --cache_level instance --force_rebuild true \
+    --dataset_name /home/minhpvt/swe-world-v3/SWE-EVO/output/exported_dataset \
+    --cache_level instance \
     --namespace none \
     --predictions_path gold \
-    --max_workers 1 \
+    --max_workers 5 \
+    --timeout 10000 \
     --run_id test
+
+    # --cache_level instance --force_rebuild true \
 
 ```
