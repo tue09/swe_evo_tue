@@ -1,11 +1,11 @@
 ```bash
 export TMPDIR=/bigdisk/minhpvt/sweworld/sweworld-v3/tmp
 mkdir -p output/new-data6
-python -m swebench.scripts.create_data https://github.com/numpy/numpy/compare/v2.1.3..v2.2.0 --output-dir output/new-data6
-python -m swebench.scripts.create_data https://github.com/numpy/numpy/compare/v2.2.6..v2.3.0 --output-dir output/new-data6
-python -m swebench.scripts.create_data https://github.com/graphql-python/graphene/compare/v3.2.2..v3.3.0 --output-dir output/new-data6
-python -m swebench.scripts.create_data https://github.com/arrow-py/arrow/compare/1.2.0..1.2.1 --output-dir output/new-data6
-python -m swebench.scripts.create_data https://github.com/qutip/qutip/compare/v5.0.4..v5.1.0 --output-dir output/new-data6
+python -m swebench.scripts.create_data https://github.com/numpy/numpy/compare/v2.1.3..v2.2.0 --output-dir output/new-data5
+python -m swebench.scripts.create_data https://github.com/numpy/numpy/compare/v2.2.6..v2.3.0 --output-dir output/new-data5
+python -m swebench.scripts.create_data https://github.com/graphql-python/graphene/compare/v3.2.2..v3.3.0 --output-dir output/new-data5
+python -m swebench.scripts.create_data https://github.com/arrow-py/arrow/compare/1.2.0..1.2.1 --output-dir output/new-data5
+python -m swebench.scripts.create_data https://github.com/qutip/qutip/compare/v5.0.4..v5.1.0 --output-dir output/new-data5
 
 
 export TMPDIR=/bigdisk/minhpvt/sweworld/sweworld-v3/tmp
@@ -28,7 +28,7 @@ python -m swebench.harness.run_evaluation \
     --cache_level instance \
     --namespace none \
     --predictions_path gold \
-    --max_workers 5 \
+    --max_workers 10 \
     --timeout 10000 \
     --run_id test
 

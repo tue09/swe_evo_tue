@@ -957,6 +957,18 @@ SPECS_NUMPY = {
     ]
 }
 
+SPECS_QUTIP = {
+    k: {
+        "python": "3.12",
+        "packages": "setuptools wheel numpy scipy cython packaging pytest pytest-rerunfailures",
+        "install": "python setup.py develop",
+        "test_cmd": TEST_PYTEST,
+    }
+    for k in [
+        "v5.0.4",
+    ]
+}
+
 # Constants - Task Instance Instllation Environment
 MAP_REPO_VERSION_TO_SPECS_PY = {
     "astropy/astropy": SPECS_ASTROPY,
@@ -984,6 +996,7 @@ MAP_REPO_VERSION_TO_SPECS_PY = {
     "arrow-py/arrow": SPECS_ARROW,
     "scipy/scipy": SPECS_SCIPY,
     "numpy/numpy": SPECS_NUMPY,
+    "qutip/qutip": SPECS_QUTIP,
 }
 
 # Constants - Repository Specific Installation Instructions
