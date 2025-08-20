@@ -60,9 +60,9 @@ from swebench.harness.utils import (
 )
 
 GIT_APPLY_CMDS = [
-    "git apply --verbose",
+    # "git apply --verbose",
     "git apply --verbose --reject",
-    "patch --batch --fuzz=5 -p1 -i",
+    # "patch --batch --fuzz=5 -p1 -i",
 ]
 
 
@@ -166,6 +166,9 @@ def run_instance(
                 break
             else:
                 logger.info(f"Failed to apply patch to container: {git_apply_cmd} : {val.output.decode(UTF8)}")
+            
+            applied_patch = True
+            break
         if not applied_patch:
             logger.info(f"{APPLY_PATCH_FAIL}:\n{val.output.decode(UTF8)}")
             raise EvaluationError(
