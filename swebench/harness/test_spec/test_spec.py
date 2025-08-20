@@ -52,14 +52,14 @@ class TestSpec:
     @property
     def setup_env_script(self):
         return (
-            "\n".join(["#!/bin/bash", "set -euxo pipefail"] + self.env_script_list)
+            "\n".join(["#!/bin/bash", "set -exo pipefail"] + self.env_script_list)
             + "\n"
         )
 
     @property
     def eval_script(self):
         return (
-            "\n".join(["#!/bin/bash", "set -uxo pipefail"] + self.eval_script_list)
+            "\n".join(["#!/bin/bash", "set -xo pipefail"] + self.eval_script_list)
             + "\n"
         )
         # Don't exit early because we need to revert tests at the end
@@ -67,7 +67,7 @@ class TestSpec:
     @property
     def install_repo_script(self):
         return (
-            "\n".join(["#!/bin/bash", "set -euxo pipefail"] + self.repo_script_list)
+            "\n".join(["#!/bin/bash", "set -exo pipefail"] + self.repo_script_list)
             + "\n"
         )
 
