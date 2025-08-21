@@ -61,7 +61,8 @@ from swebench.harness.utils import (
 
 GIT_APPLY_CMDS = [
     # "git apply --verbose",
-    "git apply --verbose --reject",
+    # "git apply --verbose --reject",
+    "git apply --verbose --reject --index",
     # "patch --batch --fuzz=5 -p1 -i",
 ]
 
