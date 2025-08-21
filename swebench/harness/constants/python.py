@@ -934,7 +934,7 @@ SPECS_SCIPY = {
         "pre_install": [
             "apt update && apt install -y gcc g++ gfortran libopenblas-dev liblapack-dev pkg-config python3-pip python3-dev",
         ],
-        "install": "git submodule update --init --recursive && python -m pip install . --no-build-isolation",
+        "install": "git submodule update --init --recursive ; python -m pip install . --no-build-isolation ; python setup.py develop",
         "test_cmd": "python dev.py test -- --continue-on-collection-errors -rA",
     }
     for k in [
