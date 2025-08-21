@@ -3,6 +3,7 @@
 CLI tool to extract release notes and diff from GitHub compare and release URLs, outputting a structured JSON file.
 """
 import argparse
+import json
 import os
 import re
 import requests
@@ -303,11 +304,15 @@ def main():
         "end_version_commit": end_commit,
         "image": f"sweworld/{instance_id}:latest"
     }
-    output_filename = f"{owner}__{repo}_{base}_{end}.yaml"
+    output_filename = f"{owner}__{repo}_{base}_{end}.json"
     output_path = os.path.join(args.output_dir, output_filename)
-    with open(output_path, 'w') as f:
-        out = dump_nice_yaml(output)
-        f.write(out)
+    # with open(output_path, 'w') as f:
+    #     out = dump_nice_yaml(output)
+    #     f.write(out)
+
+    # dump json instead
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(output, f, indent=4, ensure_ascii=False)
     print(f"Output written to {output_path}")
     
     # Clean up cached repositories

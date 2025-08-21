@@ -1,17 +1,17 @@
 import os
 import glob
 import argparse
-import yaml
+import json
 from datasets import Dataset, DatasetDict
 
 
 def load_yaml_files(input_dir):
-    yaml_files = glob.glob(os.path.join(input_dir, '*.yaml'))
+    json_files = glob.glob(os.path.join(input_dir, '*.json'))
     data = []
-    for file_path in yaml_files:
+    for file_path in json_files:
         with open(file_path, 'r', encoding='utf-8') as f:
             # Each file is a single document
-            doc = yaml.safe_load(f)
+            doc = json.load(f)
             doc['version'] = ''
             doc['hints_text'] = ''
             data.append(doc)
