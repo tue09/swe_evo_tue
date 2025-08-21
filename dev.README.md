@@ -14,13 +14,13 @@ python -m swebench.scripts.create_data https://github.com/django-oscar/django-os
 
 python -m swebench.scripts.create_data https://github.com/benfred/implicit/compare/v0.4.8..v0.5.0 --output-dir output/new-data6
 python -m swebench.scripts.create_data https://github.com/nedbat/coveragepy/compare/7.7.1..7.8.0 --output-dir output/new-data6
-python -m swebench.scripts.create_data https://github.com/elastic/elasticsearch-py/compare/v8.19.0..v9.0.0 --output-dir output/new-data6
 python -m swebench.scripts.create_data https://github.com/nedbat/coveragepy/compare/7.8.2..7.9.0 --output-dir output/new-data6
+python -m swebench.scripts.create_data https://github.com/elastic/elasticsearch-py/compare/v8.19.0..v9.0.0 --output-dir output/new-data6
 python -m swebench.scripts.create_data https://github.com/pydata/xarray/compare/v2025.06.1..v2025.07.0 --output-dir output/new-data6
 python -m swebench.scripts.create_data https://github.com/Tribler/tribler/compare/v7.13.0-alpha.4..v7.13.0 --output-dir output/new-data6
 python -m swebench.scripts.create_data https://github.com/joke2k/django-environ/compare/v0.11.2..v0.12.0 --output-dir output/new-data6
-python -m swebench.scripts.create_data https://github.com/google/timesketch/compare/20250408..20250521 --output-dir output/new-data6
 python -m swebench.scripts.create_data https://github.com/CamDavidsonPilon/lifelines/compare/v0.18.6..v0.19.0 --output-dir output/new-data6
+python -m swebench.scripts.create_data https://github.com/google/timesketch/compare/20250408..20250521 --output-dir output/new-data6
 python -m swebench.scripts.create_data https://github.com/google/timesketch/compare/20250521..20250708 --output-dir output/new-data6
 python -m swebench.scripts.create_data https://github.com/google/timesketch/compare/20250112..20250408 --output-dir output/new-data6
 python -m swebench.scripts.create_data https://github.com/pycontribs/jira/compare/3.9.4..3.10.0 --output-dir output/new-data6

@@ -969,6 +969,147 @@ SPECS_QUTIP = {
     ]
 }
 
+SPECS_DJANGO_OSCAR = {
+    k: {
+        "python": "3.12",
+        "install": "python -m pip install -e .[dev]",
+        "test_cmd": TEST_PYTEST,
+    }
+    for k in [
+        "3.2.4",
+        "3.2.6",
+    ]
+}
+
+SPECS_BEN_FRED_IMPLICIT = {
+    k: {
+        "python": "3.12",
+        "install": "python -m pip install -e .[dev]",
+        "test_cmd": TEST_PYTEST,
+    }
+    for k in [
+        "v0.4.8",
+    ]
+}
+
+SPECS_NEDBATS_COVERAGEPY = {
+    k: {
+        "python": "3.12",
+        "install": "python -m pip install -e .[dev]",
+        "test_cmd": TEST_PYTEST,
+    }
+    for k in [
+        "v7.7.1",
+        "v7.8.2",
+    ]
+}
+
+
+SPECS_ELASTICSEARCH_PY = {
+    k: {
+        "python": "3.12",
+        "install": "python -m pip install -e .[dev]",
+        "test_cmd": TEST_PYTEST,
+    }
+    for k in [
+        "v8.19.0",
+    ]
+}
+
+SPECS_XARRAY.update({
+    k: {
+        "python": "3.12",
+        "packages": "environment.yml",
+        "install": "python -m pip install -e .[dev]",
+        "test_cmd": TEST_PYTEST,
+    }
+    for k in [
+        "v2025.06.1",
+        "v2025.07.0",
+    ]
+})
+
+
+SPECS_TRIBLER = {
+    k: {
+        "python": "3.12",
+        "packages": "environment.yml",
+        "install": "python -m pip install -e .[dev]",
+        "test_cmd": TEST_PYTEST,
+    }
+    for k in [
+        "v7.13.0-alpha.4",
+    ]
+}
+
+SPECS_JOKER2K_DJANGO_ENVIRON = {
+    k: {
+        "python": "3.12",
+        "install": "python -m pip install -e .[dev]",
+        "test_cmd": TEST_PYTEST,
+    }
+    for k in [
+        "v0.11.2",
+    ]
+}
+
+SPECS_LIFELINES = {
+    k: {
+        "python": "3.12",
+        "install": "python -m pip install -e .[dev]",
+        "test_cmd": TEST_PYTEST,
+    }
+    for k in [
+        "v0.18.6",
+    ]
+}
+
+SPECS_GOOGLE_TIMESKETCH = {
+    k: {
+        "python": "3.12",
+        "install": "python -m pip install -e .[dev]",
+        "test_cmd": TEST_PYTEST,
+    }
+    for k in [
+        "20250408",
+        "20250521",
+        "20250112",
+    ]
+}
+
+SPECS_JIRA = {
+    k: {
+        "python": "3.12",
+        "install": "python -m pip install -e .[dev]",
+        "test_cmd": TEST_PYTEST,
+    }
+    for k in [
+        "3.9.4",
+    ]
+}
+
+SPECS_NAPALM = {
+    k: {
+        "python": "3.12",
+        "install": "python -m pip install -e .[dev]",
+        "test_cmd": TEST_PYTEST,
+    }
+    for k in [
+        "4.1.0",
+    ]
+}
+
+SPECS_RDFLIB = {
+    k: {
+        "python": "3.12",
+        "install": "python -m pip install -e .[dev]",
+        "test_cmd": TEST_PYTEST,
+    }
+    for k in [
+        "6.3.1",
+    ]
+}
+
 # Constants - Task Instance Instllation Environment
 MAP_REPO_VERSION_TO_SPECS_PY = {
     "astropy/astropy": SPECS_ASTROPY,
@@ -997,6 +1138,18 @@ MAP_REPO_VERSION_TO_SPECS_PY = {
     "scipy/scipy": SPECS_SCIPY,
     "numpy/numpy": SPECS_NUMPY,
     "qutip/qutip": SPECS_QUTIP,
+    "django-oscar/django-oscar": SPECS_DJANGO_OSCAR,
+    "benfred/implicit": SPECS_BEN_FRED_IMPLICIT,
+    "nedbat/coveragepy": SPECS_NEDBATS_COVERAGEPY,
+    "elastic/elasticsearch-py": SPECS_ELASTICSEARCH_PY,
+    # "pydata/xarray": SPECS_XARRAY,
+    "Tribler/tribler": SPECS_TRIBLER,
+    "joke2k/django-environ": SPECS_JOKER2K_DJANGO_ENVIRON,
+    "CamDavidsonPilon/lifelines": SPECS_LIFELINES,
+    "google/timesketch": SPECS_GOOGLE_TIMESKETCH,
+    "pycontribs/jira": SPECS_JIRA,
+    "napalm-automation/napalm": SPECS_NAPALM,
+    "RDFLib/rdflib": SPECS_RDFLIB,
 }
 
 # Constants - Repository Specific Installation Instructions
