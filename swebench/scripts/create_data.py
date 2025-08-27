@@ -302,7 +302,7 @@ def main():
         "start_version": base,
         "end_version": end,
         "end_version_commit": end_commit,
-        "image": f"sweworld/{instance_id}:latest"
+        "image": f"thaiminhpv/sweb.eval.x86_64.{instance_id}:latest"
     }
     output_filename = f"{owner}__{repo}_{base}_{end}.json"
     output_path = os.path.join(args.output_dir, output_filename)
