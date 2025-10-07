@@ -1,0 +1,5574 @@
+diff --git a/tests/basic_env.py b/tests/basic_env.py
+index 6ee53e6bd..1f87a9501 100644
+--- a/tests/basic_env.py
++++ b/tests/basic_env.py
+@@ -1,5 +1,3 @@
+-# encoding: utf-8
+-
+ import logging
+ import os
+ import tempfile
+@@ -17,7 +15,7 @@ from dvc.utils.fs import remove
+ logger = logging.getLogger("dvc")
+ 
+ 
+-class TestDirFixture(object):
++class TestDirFixture:
+     DATA_DIR = "data_dir"
+     DATA_SUB_DIR = os.path.join(DATA_DIR, "data_sub_dir")
+     DATA = os.path.join(DATA_DIR, "data")
+@@ -76,8 +74,8 @@ class TestDirFixture(object):
+ 
+     @staticmethod
+     def mkdtemp(base_directory=None):
+-        prefix = "dvc-test.{}.".format(os.getpid())
+-        suffix = ".{}".format(shortuuid.uuid())
++        prefix = f"dvc-test.{os.getpid()}."
++        suffix = f".{shortuuid.uuid()}"
+         return tempfile.mkdtemp(
+             prefix=prefix, suffix=suffix, dir=base_directory
+         )
+diff --git a/tests/conftest.py b/tests/conftest.py
+index 7e9e99628..4fe798381 100644
+--- a/tests/conftest.py
++++ b/tests/conftest.py
+@@ -31,7 +31,7 @@ def reset_loglevel(request, caplog):
+ here = os.path.abspath(os.path.dirname(__file__))
+ 
+ user = "user"
+-key_path = os.path.join(here, "{0}.key".format(user))
++key_path = os.path.join(here, f"{user}.key")
+ 
+ 
+ @pytest.fixture
+diff --git a/tests/dir_helpers.py b/tests/dir_helpers.py
+index 8e1d87630..e54f31ab7 100644
+--- a/tests/dir_helpers.py
++++ b/tests/dir_helpers.py
+@@ -46,11 +46,11 @@ from global repo template to creating everything inplace, which:
+ import os
+ import pathlib
+ from contextlib import contextmanager
++from textwrap import dedent
+ 
+ import pytest
+ from funcy import lmap, retry
+ 
+-from dvc.compat import fspath, fspath_py35
+ from dvc.logger import disable_other_loggers
+ from dvc.utils.fs import makedirs
+ 
+@@ -59,10 +59,12 @@ __all__ = [
+     "tmp_dir",
+     "scm",
+     "dvc",
+-    "local_remote",
+     "run_copy",
++    "run_head",
+     "erepo_dir",
+     "git_dir",
++    "setup_remote",
++    "git_init",
+ ]
+ 
+ 
+@@ -77,15 +79,11 @@ class TmpDir(pathlib.Path):
+         self = cls._from_parts(args, init=False)
+         if not self._flavour.is_supported:
+             raise NotImplementedError(
+-                "cannot instantiate %r on your system" % (cls.__name__,)
++                f"cannot instantiate {cls.__name__!r} on your system"
+             )
+         self._init()
+         return self
+ 
+-    # Not needed in Python 3.6+
+-    def __fspath__(self):
+-        return str(self)
+-
+     def init(self, *, scm=False, dvc=False):
+         from dvc.repo import Repo
+         from dvc.scm.git import Git
+@@ -93,10 +91,10 @@ class TmpDir(pathlib.Path):
+         assert not scm or not hasattr(self, "scm")
+         assert not dvc or not hasattr(self, "dvc")
+ 
+-        str_path = fspath(self)
++        str_path = os.fspath(self)
+ 
+         if scm:
+-            _git_init(str_path)
++            git_init(str_path)
+         if dvc:
+             self.dvc = Repo.init(
+                 str_path, no_scm=not scm and not hasattr(self, "scm")
+@@ -184,7 +182,7 @@ class TmpDir(pathlib.Path):
+     def chdir(self):
+         old = os.getcwd()
+         try:
+-            os.chdir(fspath_py35(self))
++            os.chdir(self)
+             yield
+         finally:
+             os.chdir(old)
+@@ -203,7 +201,7 @@ class TmpDir(pathlib.Path):
+ def _coerce_filenames(filenames):
+     if isinstance(filenames, (str, bytes, pathlib.PurePath)):
+         filenames = [filenames]
+-    return lmap(fspath, filenames)
++    return lmap(os.fspath, filenames)
+ 
+ 
+ class WindowsTmpDir(TmpDir, pathlib.PureWindowsPath):
+@@ -218,7 +216,7 @@ class PosixTmpDir(TmpDir, pathlib.PurePosixPath):
+ def make_tmp_dir(tmp_path_factory, request):
+     def make(name, *, scm=False, dvc=False):
+         path = tmp_path_factory.mktemp(name) if isinstance(name, str) else name
+-        new_dir = TmpDir(fspath_py35(path))
++        new_dir = TmpDir(path)
+         new_dir.init(scm=scm, dvc=dvc)
+         request.addfinalizer(new_dir.close)
+         return new_dir
+@@ -243,7 +241,7 @@ def dvc(tmp_dir):
+     return tmp_dir.dvc
+ 
+ 
+-def _git_init(path):
++def git_init(path):
+     from git import Repo
+     from git.exc import GitCommandNotFound
+ 
+@@ -256,17 +254,6 @@ def _git_init(path):
+     git.close()
+ 
+ 
+-@pytest.fixture
+-def local_remote(request, tmp_dir, dvc, make_tmp_dir):
+-    path = make_tmp_dir("local-remote")
+-    with dvc.config.edit() as conf:
+-        conf["remote"]["upstream"] = {"url": fspath(path)}
+-        conf["core"]["remote"] = "upstream"
+-    if "scm" in request.fixturenames:
+-        tmp_dir.scm_add([dvc.config.files["repo"]], commit="add remote")
+-    return path
+-
+-
+ @pytest.fixture
+ def run_copy(tmp_dir, dvc):
+     tmp_dir.gen(
+@@ -276,28 +263,51 @@ def run_copy(tmp_dir, dvc):
+ 
+     def run_copy(src, dst, **run_kwargs):
+         return dvc.run(
+-            cmd="python copy.py {} {}".format(src, dst),
++            cmd=f"python copy.py {src} {dst}",
+             outs=[dst],
+             deps=[src, "copy.py"],
+-            **run_kwargs
++            **run_kwargs,
+         )
+ 
+     return run_copy
+ 
+ 
+ @pytest.fixture
+-def erepo_dir(make_tmp_dir):
+-    path = make_tmp_dir("erepo", scm=True, dvc=True)
++def run_head(tmp_dir, dvc):
++    """Output first line of each file to different file with '-1' appended.
++    Useful for tracking multiple outputs/dependencies which are not a copy
++    of each others.
++    """
++    tmp_dir.gen(
++        {
++            "head.py": dedent(
++                """
++        import sys
++        for file in sys.argv[1:]:
++            with open(file) as f, open(file +"-1","w+") as w:
++                w.write(f.readline())
++        """
++            )
++        }
++    )
++    script = os.path.abspath(tmp_dir / "head.py")
+ 
+-    # Chdir for git and dvc to work locally
+-    with path.chdir():
+-        with path.dvc.config.edit() as conf:
+-            cache_dir = path.dvc.cache.local.cache_dir
+-            conf["remote"]["upstream"] = {"url": cache_dir}
+-            conf["core"]["remote"] = "upstream"
+-        path.scm_add([path.dvc.config.files["repo"]], commit="add remote")
++    def run(*args, **run_kwargs):
++        return dvc.run(
++            **{
++                "cmd": "python {} {}".format(script, " ".join(args)),
++                "outs": [dep + "-1" for dep in args],
++                "deps": list(args),
++                **run_kwargs,
++            }
++        )
+ 
+-    return path
++    return run
++
++
++@pytest.fixture
++def erepo_dir(make_tmp_dir):
++    return make_tmp_dir("erepo", scm=True, dvc=True)
+ 
+ 
+ @pytest.fixture
+@@ -305,3 +315,20 @@ def git_dir(make_tmp_dir):
+     path = make_tmp_dir("git-erepo", scm=True)
+     path.scm.commit("init repo")
+     return path
++
++
++@pytest.fixture
++def setup_remote(make_tmp_dir):
++    def create(repo, url=None, name="upstream", default=True):
++        if not url:
++            url = os.fspath(make_tmp_dir("local_remote"))
++        with repo.config.edit() as conf:
++            conf["remote"][name] = {"url": url}
++            if default:
++                conf["core"]["remote"] = name
++
++        repo.scm.add(repo.config.files["repo"])
++        repo.scm.commit(f"add '{name}' remote")
++        return url
++
++    return create
+diff --git a/tests/func/metrics/test_diff.py b/tests/func/metrics/test_diff.py
+index 8aba505a2..0b04e9bef 100644
+--- a/tests/func/metrics/test_diff.py
++++ b/tests/func/metrics/test_diff.py
+@@ -134,3 +134,14 @@ def test_metrics_diff_with_unchanged(tmp_dir, scm, dvc):
+             "xyz": {"old": 10, "new": 10, "diff": 0},
+         }
+     }
++
++
++def test_no_commits(tmp_dir):
++    from dvc.repo import Repo
++    from dvc.scm.git import Git
++    from tests.dir_helpers import git_init
++
++    git_init(".")
++    assert Git().no_commits
++
++    assert Repo.init().metrics.diff() == {}
+diff --git a/tests/func/params/test_diff.py b/tests/func/params/test_diff.py
+index d34bbaf89..d4bc3a2bb 100644
+--- a/tests/func/params/test_diff.py
++++ b/tests/func/params/test_diff.py
+@@ -119,3 +119,14 @@ def test_pipeline_tracked_params(tmp_dir, scm, dvc, run_copy):
+     assert dvc.params.diff(a_rev="HEAD~2") == {
+         "params.yaml": {"foo": {"old": "bar", "new": "qux"}}
+     }
++
++
++def test_no_commits(tmp_dir):
++    from dvc.repo import Repo
++    from dvc.scm.git import Git
++    from tests.dir_helpers import git_init
++
++    git_init(".")
++    assert Git().no_commits
++
++    assert Repo.init().params.diff() == {}
+diff --git a/tests/func/plots/__init__.py b/tests/func/plots/__init__.py
+new file mode 100644
+index 000000000..e69de29bb
+diff --git a/tests/func/plots/test_diff.py b/tests/func/plots/test_diff.py
+new file mode 100644
+index 000000000..e488ec75f
+--- /dev/null
++++ b/tests/func/plots/test_diff.py
+@@ -0,0 +1,29 @@
++import json
++
++from .test_plots import PlotData, _run_with, _write_json
++
++
++def test_diff_dirty(tmp_dir, scm, dvc):
++    metric_1 = [{"y": 2}, {"y": 3}]
++    _write_json(tmp_dir, metric_1, "metric.json")
++    _run_with(tmp_dir, plots_no_cache=["metric.json"], commit="init")
++
++    metric_2 = [{"y": 3}, {"y": 5}]
++    _write_json(tmp_dir, metric_2, "metric.json")
++    _run_with(tmp_dir, plots_no_cache=["metric.json"], commit="second")
++
++    metric_3 = [{"y": 5}, {"y": 6}]
++    _write_json(tmp_dir, metric_3, "metric.json")
++    _run_with(tmp_dir, plots_no_cache=["metric.json"])
++
++    plot_string = dvc.plots.diff(fields={"y"})["metric.json"]
++
++    plot_content = json.loads(plot_string)
++    assert plot_content["data"]["values"] == [
++        {"y": 5, PlotData.INDEX_FIELD: 0, "rev": "working tree"},
++        {"y": 6, PlotData.INDEX_FIELD: 1, "rev": "working tree"},
++        {"y": 3, PlotData.INDEX_FIELD: 0, "rev": "HEAD"},
++        {"y": 5, PlotData.INDEX_FIELD: 1, "rev": "HEAD"},
++    ]
++    assert plot_content["encoding"]["x"]["field"] == PlotData.INDEX_FIELD
++    assert plot_content["encoding"]["y"]["field"] == "y"
+diff --git a/tests/func/test_plot.py b/tests/func/plots/test_plots.py
+similarity index 68%
+rename from tests/func/test_plot.py
+rename to tests/func/plots/test_plots.py
+index cd1acc6bb..e8923a437 100644
+--- a/tests/func/test_plot.py
++++ b/tests/func/plots/test_plots.py
+@@ -1,22 +1,21 @@
+ import csv
+ import json
+ import logging
++import os
+ import shutil
+ from collections import OrderedDict
+ 
+ import pytest
+ import yaml
+-from bs4 import BeautifulSoup
+ from funcy import first
+ 
+-from dvc.compat import fspath
+-from dvc.repo.plot import NoDataOrTemplateProvided
+-from dvc.repo.plot.data import (
++from dvc.repo.plots.data import (
+     NoMetricInHistoryError,
+     PlotData,
+     PlotMetricTypeError,
+ )
+-from dvc.repo.plot.template import (
++from dvc.repo.plots.show import NoDataOrTemplateProvided
++from dvc.repo.plots.template import (
+     NoDataForTemplateError,
+     NoFieldInDataError,
+     TemplateNotFoundError,
+@@ -27,10 +26,14 @@ def _remove_whitespace(value):
+     return value.replace(" ", "").replace("\n", "")
+ 
+ 
+-def _run_with_metric(tmp_dir, metric_filename, commit=None, tag=None):
+-    tmp_dir.dvc.run(metrics_no_cache=[metric_filename], single_stage=True)
++def _run_with(tmp_dir, commit=None, tag=None, **kwargs):
++    stage = tmp_dir.dvc.run(single_stage=True, **kwargs)
+     if hasattr(tmp_dir.dvc, "scm"):
+-        tmp_dir.dvc.scm.add([metric_filename, metric_filename + ".dvc"])
++        files = [stage.path]
++        files += [
++            os.fspath(out.path_info) for out in stage.outs if not out.use_cache
++        ]
++        tmp_dir.dvc.scm.add(files)
+         if commit:
+             tmp_dir.dvc.scm.commit(commit)
+         if tag:
+@@ -60,21 +63,20 @@ def test_plot_csv_one_column(tmp_dir, scm, dvc):
+     # no header
+     metric = [{"val": 2}, {"val": 3}]
+     _write_csv(metric, "metric.csv", header=False)
+-    _run_with_metric(tmp_dir, metric_filename="metric.csv")
++    _run_with(tmp_dir, plots_no_cache=["metric.csv"])
+ 
+-    plot_string = dvc.plot(
+-        "metric.csv",
++    plot_string = dvc.plots.show(
+         csv_header=False,
+         x_title="x_title",
+         y_title="y_title",
+         title="mytitle",
+-    )
++    )["metric.csv"]
+ 
+     plot_content = json.loads(plot_string)
+     assert plot_content["title"] == "mytitle"
+     assert plot_content["data"]["values"] == [
+-        {"0": "2", PlotData.INDEX_FIELD: 0, "rev": "workspace"},
+-        {"0": "3", PlotData.INDEX_FIELD: 1, "rev": "workspace"},
++        {"0": "2", PlotData.INDEX_FIELD: 0, "rev": "working tree"},
++        {"0": "3", PlotData.INDEX_FIELD: 1, "rev": "working tree"},
+     ]
+     assert plot_content["encoding"]["x"]["field"] == PlotData.INDEX_FIELD
+     assert plot_content["encoding"]["y"]["field"] == "0"
+@@ -88,23 +90,23 @@ def test_plot_csv_multiple_columns(tmp_dir, scm, dvc):
+         OrderedDict([("first_val", 200), ("second_val", 300), ("val", 3)]),
+     ]
+     _write_csv(metric, "metric.csv")
+-    _run_with_metric(tmp_dir, metric_filename="metric.csv")
++    _run_with(tmp_dir, plots_no_cache=["metric.csv"])
+ 
+-    plot_string = dvc.plot("metric.csv")
++    plot_string = dvc.plots.show()["metric.csv"]
+ 
+     plot_content = json.loads(plot_string)
+     assert plot_content["data"]["values"] == [
+         {
+             "val": "2",
+             PlotData.INDEX_FIELD: 0,
+-            "rev": "workspace",
++            "rev": "working tree",
+             "first_val": "100",
+             "second_val": "100",
+         },
+         {
+             "val": "3",
+             PlotData.INDEX_FIELD: 1,
+-            "rev": "workspace",
++            "rev": "working tree",
+             "first_val": "200",
+             "second_val": "300",
+         },
+@@ -119,23 +121,23 @@ def test_plot_csv_choose_axes(tmp_dir, scm, dvc):
+         OrderedDict([("first_val", 200), ("second_val", 300), ("val", 3)]),
+     ]
+     _write_csv(metric, "metric.csv")
+-    _run_with_metric(tmp_dir, metric_filename="metric.csv")
++    _run_with(tmp_dir, plots_no_cache=["metric.csv"])
+ 
+-    plot_string = dvc.plot(
+-        "metric.csv", x_field="first_val", y_field="second_val"
+-    )
++    plot_string = dvc.plots.show(x_field="first_val", y_field="second_val")[
++        "metric.csv"
++    ]
+ 
+     plot_content = json.loads(plot_string)
+     assert plot_content["data"]["values"] == [
+         {
+             "val": "2",
+-            "rev": "workspace",
++            "rev": "working tree",
+             "first_val": "100",
+             "second_val": "100",
+         },
+         {
+             "val": "3",
+-            "rev": "workspace",
++            "rev": "working tree",
+             "first_val": "200",
+             "second_val": "300",
+         },
+@@ -147,14 +149,14 @@ def test_plot_csv_choose_axes(tmp_dir, scm, dvc):
+ def test_plot_json_single_val(tmp_dir, scm, dvc):
+     metric = [{"val": 2}, {"val": 3}]
+     _write_json(tmp_dir, metric, "metric.json")
+-    _run_with_metric(tmp_dir, "metric.json", "first run")
++    _run_with(tmp_dir, plots_no_cache=["metric.json"], commit="first run")
+ 
+-    plot_string = dvc.plot("metric.json")
++    plot_string = dvc.plots.show()["metric.json"]
+ 
+     plot_json = json.loads(plot_string)
+     assert plot_json["data"]["values"] == [
+-        {"val": 2, PlotData.INDEX_FIELD: 0, "rev": "workspace"},
+-        {"val": 3, PlotData.INDEX_FIELD: 1, "rev": "workspace"},
++        {"val": 2, PlotData.INDEX_FIELD: 0, "rev": "working tree"},
++        {"val": 3, PlotData.INDEX_FIELD: 1, "rev": "working tree"},
+     ]
+     assert plot_json["encoding"]["x"]["field"] == PlotData.INDEX_FIELD
+     assert plot_json["encoding"]["y"]["field"] == "val"
+@@ -166,9 +168,9 @@ def test_plot_json_multiple_val(tmp_dir, scm, dvc):
+         {"first_val": 200, "val": 3},
+     ]
+     _write_json(tmp_dir, metric, "metric.json")
+-    _run_with_metric(tmp_dir, "metric.json", "first run")
++    _run_with(tmp_dir, plots_no_cache=["metric.json"], commit="first run")
+ 
+-    plot_string = dvc.plot("metric.json")
++    plot_string = dvc.plots.show()["metric.json"]
+ 
+     plot_content = json.loads(plot_string)
+     assert plot_content["data"]["values"] == [
+@@ -176,13 +178,13 @@ def test_plot_json_multiple_val(tmp_dir, scm, dvc):
+             "val": 2,
+             PlotData.INDEX_FIELD: 0,
+             "first_val": 100,
+-            "rev": "workspace",
++            "rev": "working tree",
+         },
+         {
+             "val": 3,
+             PlotData.INDEX_FIELD: 1,
+             "first_val": 200,
+-            "rev": "workspace",
++            "rev": "working tree",
+         },
+     ]
+     assert plot_content["encoding"]["x"]["field"] == PlotData.INDEX_FIELD
+@@ -195,19 +197,16 @@ def test_plot_confusion(tmp_dir, dvc):
+         {"predicted": "A", "actual": "A"},
+     ]
+     _write_json(tmp_dir, confusion_matrix, "metric.json")
+-    _run_with_metric(tmp_dir, "metric.json", "first run")
++    _run_with(tmp_dir, plots_no_cache=["metric.json"], commit="first run")
+ 
+-    plot_string = dvc.plot(
+-        datafile="metric.json",
+-        template="confusion",
+-        x_field="predicted",
+-        y_field="actual",
+-    )
++    plot_string = dvc.plots.show(
++        template="confusion", x_field="predicted", y_field="actual",
++    )["metric.json"]
+ 
+     plot_content = json.loads(plot_string)
+     assert plot_content["data"]["values"] == [
+-        {"predicted": "B", "actual": "A", "rev": "workspace"},
+-        {"predicted": "A", "actual": "A", "rev": "workspace"},
++        {"predicted": "B", "actual": "A", "rev": "working tree"},
++        {"predicted": "A", "actual": "A", "rev": "working tree"},
+     ]
+     assert plot_content["encoding"]["x"]["field"] == "predicted"
+     assert plot_content["encoding"]["y"]["field"] == "actual"
+@@ -216,19 +215,21 @@ def test_plot_confusion(tmp_dir, dvc):
+ def test_plot_multiple_revs_default(tmp_dir, scm, dvc):
+     metric_1 = [{"y": 2}, {"y": 3}]
+     _write_json(tmp_dir, metric_1, "metric.json")
+-    _run_with_metric(tmp_dir, "metric.json", "init", "v1")
++    _run_with(tmp_dir, plots_no_cache=["metric.json"], commit="init", tag="v1")
+ 
+     metric_2 = [{"y": 3}, {"y": 5}]
+     _write_json(tmp_dir, metric_2, "metric.json")
+-    _run_with_metric(tmp_dir, "metric.json", "second", "v2")
++    _run_with(
++        tmp_dir, plots_no_cache=["metric.json"], commit="second", tag="v2"
++    )
+ 
+     metric_3 = [{"y": 5}, {"y": 6}]
+     _write_json(tmp_dir, metric_3, "metric.json")
+-    _run_with_metric(tmp_dir, "metric.json", "third")
++    _run_with(tmp_dir, plots_no_cache=["metric.json"], commit="third")
+ 
+-    plot_string = dvc.plot(
+-        "metric.json", fields={"y"}, revisions=["HEAD", "v2", "v1"],
+-    )
++    plot_string = dvc.plots.show(fields={"y"}, revs=["HEAD", "v2", "v1"],)[
++        "metric.json"
++    ]
+ 
+     plot_content = json.loads(plot_string)
+     assert plot_content["data"]["values"] == [
+@@ -244,27 +245,25 @@ def test_plot_multiple_revs_default(tmp_dir, scm, dvc):
+ 
+ 
+ def test_plot_multiple_revs(tmp_dir, scm, dvc):
+-    shutil.copy(
+-        fspath(tmp_dir / ".dvc" / "plot" / "default.json"), "template.json"
+-    )
++    shutil.copy(tmp_dir / ".dvc" / "plots" / "default.json", "template.json")
+ 
+     metric_1 = [{"y": 2}, {"y": 3}]
+     _write_json(tmp_dir, metric_1, "metric.json")
+-    _run_with_metric(tmp_dir, "metric.json", "init", "v1")
++    _run_with(tmp_dir, plots_no_cache=["metric.json"], commit="init", tag="v1")
+ 
+     metric_2 = [{"y": 3}, {"y": 5}]
+     _write_json(tmp_dir, metric_2, "metric.json")
+-    _run_with_metric(tmp_dir, "metric.json", "second", "v2")
++    _run_with(
++        tmp_dir, plots_no_cache=["metric.json"], commit="second", tag="v2"
++    )
+ 
+     metric_3 = [{"y": 5}, {"y": 6}]
+     _write_json(tmp_dir, metric_3, "metric.json")
+-    _run_with_metric(tmp_dir, "metric.json", "third")
++    _run_with(tmp_dir, plots_no_cache=["metric.json"], commit="third")
+ 
+-    plot_string = dvc.plot(
+-        "metric.json",
+-        template="template.json",
+-        revisions=["HEAD", "v2", "v1"],
+-    )
++    plot_string = dvc.plots.show(
++        template="template.json", revs=["HEAD", "v2", "v1"],
++    )["metric.json"]
+ 
+     plot_content = json.loads(plot_string)
+     assert plot_content["data"]["values"] == [
+@@ -285,11 +284,16 @@ def test_plot_even_if_metric_missing(tmp_dir, scm, dvc, caplog):
+ 
+     metric = [{"y": 2}, {"y": 3}]
+     _write_json(tmp_dir, metric, "metric.json")
+-    _run_with_metric(tmp_dir, "metric.json", "there is metric", "v2")
++    _run_with(
++        tmp_dir,
++        plots_no_cache=["metric.json"],
++        commit="there is metric",
++        tag="v2",
++    )
+ 
+     caplog.clear()
+     with caplog.at_level(logging.WARNING, "dvc"):
+-        plot_string = dvc.plot("metric.json", revisions=["v1", "v2"])
++        plot_string = dvc.plots.show(revs=["v1", "v2"])["metric.json"]
+         assert (
+             "File 'metric.json' was not found at: 'v1'. "
+             "It will not be plotted." in caplog.text
+@@ -314,7 +318,7 @@ def test_throw_on_no_metric_at_all(tmp_dir, scm, dvc, caplog):
+     with pytest.raises(NoMetricInHistoryError) as error, caplog.at_level(
+         logging.WARNING, "dvc"
+     ):
+-        dvc.plot("metric.json", revisions=["v1"])
++        dvc.plots.show(targets="metric.json", revs=["v1"])
+ 
+         # do not warn if none found
+         assert len(caplog.messages) == 0
+@@ -326,8 +330,7 @@ def test_throw_on_no_metric_at_all(tmp_dir, scm, dvc, caplog):
+ def custom_template(tmp_dir, dvc):
+     custom_template = tmp_dir / "custom_template.json"
+     shutil.copy(
+-        fspath(tmp_dir / ".dvc" / "plot" / "default.json"),
+-        fspath(custom_template),
++        tmp_dir / ".dvc" / "plots" / "default.json", custom_template,
+     )
+     return custom_template
+ 
+@@ -335,16 +338,16 @@ def custom_template(tmp_dir, dvc):
+ def test_custom_template(tmp_dir, scm, dvc, custom_template):
+     metric = [{"a": 1, "b": 2}, {"a": 2, "b": 3}]
+     _write_json(tmp_dir, metric, "metric.json")
+-    _run_with_metric(tmp_dir, "metric.json", "init", "v1")
++    _run_with(tmp_dir, plots_no_cache=["metric.json"], commit="init", tag="v1")
+ 
+-    plot_string = dvc.plot(
+-        "metric.json", fspath(custom_template), x_field="a", y_field="b"
+-    )
++    plot_string = dvc.plots.show(
++        template=os.fspath(custom_template), x_field="a", y_field="b"
++    )["metric.json"]
+ 
+     plot_content = json.loads(plot_string)
+     assert plot_content["data"]["values"] == [
+-        {"a": 1, "b": 2, "rev": "workspace"},
+-        {"a": 2, "b": 3, "rev": "workspace"},
++        {"a": 1, "b": 2, "rev": "working tree"},
++        {"a": 2, "b": 3, "rev": "working tree"},
+     ]
+     assert plot_content["encoding"]["x"]["field"] == "a"
+     assert plot_content["encoding"]["y"]["field"] == "b"
+@@ -363,19 +366,16 @@ def test_custom_template_with_specified_data(
+ 
+     metric = [{"a": 1, "b": 2}, {"a": 2, "b": 3}]
+     _write_json(tmp_dir, metric, "metric.json")
+-    _run_with_metric(tmp_dir, "metric.json", "init", "v1")
++    _run_with(tmp_dir, outs_no_cache=["metric.json"], commit="init", tag="v1")
+ 
+-    plot_string = dvc.plot(
+-        datafile=None,
+-        template=fspath(custom_template),
+-        x_field="a",
+-        y_field="b",
+-    )
++    plot_string = dvc.plots.show(
++        template=os.fspath(custom_template), x_field="a", y_field="b",
++    )["metric.json"]
+ 
+     plot_content = json.loads(plot_string)
+     assert plot_content["data"]["values"] == [
+-        {"a": 1, "b": 2, "rev": "workspace"},
+-        {"a": 2, "b": 3, "rev": "workspace"},
++        {"a": 1, "b": 2, "rev": "working tree"},
++        {"a": 2, "b": 3, "rev": "working tree"},
+     ]
+     assert plot_content["encoding"]["x"]["field"] == "a"
+     assert plot_content["encoding"]["y"]["field"] == "b"
+@@ -383,8 +383,8 @@ def test_custom_template_with_specified_data(
+ 
+ def test_plot_override_specified_data_source(tmp_dir, scm, dvc):
+     shutil.copy(
+-        fspath(tmp_dir / ".dvc" / "plot" / "default.json"),
+-        fspath(tmp_dir / "newtemplate.json"),
++        tmp_dir / ".dvc" / "plots" / "default.json",
++        tmp_dir / "newtemplate.json",
+     )
+     _replace(
+         tmp_dir / "newtemplate.json",
+@@ -394,16 +394,16 @@ def test_plot_override_specified_data_source(tmp_dir, scm, dvc):
+ 
+     metric = [{"a": 1, "b": 2}, {"a": 2, "b": 3}]
+     _write_json(tmp_dir, metric, "metric2.json")
+-    _run_with_metric(tmp_dir, "metric2.json", "init", "v1")
++    _run_with(tmp_dir, outs_no_cache=["metric2.json"], commit="init", tag="v1")
+ 
+-    plot_string = dvc.plot(
+-        datafile="metric2.json", template="newtemplate.json", x_field="a"
+-    )
++    plot_string = dvc.plots.show(
++        targets=["metric2.json"], template="newtemplate.json", x_field="a"
++    )["metric2.json"]
+ 
+     plot_content = json.loads(plot_string)
+     assert plot_content["data"]["values"] == [
+-        {"a": 1, "b": 2, "rev": "workspace"},
+-        {"a": 2, "b": 3, "rev": "workspace"},
++        {"a": 1, "b": 2, "rev": "working tree"},
++        {"a": 2, "b": 3, "rev": "working tree"},
+     ]
+     assert plot_content["encoding"]["x"]["field"] == "a"
+     assert plot_content["encoding"]["y"]["field"] == "b"
+@@ -411,42 +411,41 @@ def test_plot_override_specified_data_source(tmp_dir, scm, dvc):
+ 
+ def test_should_raise_on_no_template_and_datafile(tmp_dir, dvc):
+     with pytest.raises(NoDataOrTemplateProvided):
+-        dvc.plot()
++        dvc.plots.show()
+ 
+ 
+ def test_should_raise_on_no_template(tmp_dir, dvc):
+     with pytest.raises(TemplateNotFoundError):
+-        dvc.plot("metric.json", "non_existing_template.json")
++        dvc.plots.show("metric.json", template="non_existing_template.json")
+ 
+ 
+ def test_plot_no_data(tmp_dir, dvc):
+     with pytest.raises(NoDataForTemplateError):
+-        dvc.plot(template="default")
++        dvc.plots.show(template="default")
+ 
+ 
+ def test_plot_wrong_metric_type(tmp_dir, scm, dvc):
+     tmp_dir.scm_gen("metric.txt", "content", commit="initial")
+     with pytest.raises(PlotMetricTypeError):
+-        dvc.plot(datafile="metric.txt")
++        dvc.plots.show(targets=["metric.txt"])
+ 
+ 
+ def test_plot_choose_columns(tmp_dir, scm, dvc, custom_template):
+     metric = [{"a": 1, "b": 2, "c": 3}, {"a": 2, "b": 3, "c": 4}]
+     _write_json(tmp_dir, metric, "metric.json")
+-    _run_with_metric(tmp_dir, "metric.json", "init", "v1")
++    _run_with(tmp_dir, plots_no_cache=["metric.json"], commit="init", tag="v1")
+ 
+-    plot_string = dvc.plot(
+-        "metric.json",
+-        fspath(custom_template),
++    plot_string = dvc.plots.show(
++        template=os.fspath(custom_template),
+         fields={"b", "c"},
+         x_field="b",
+         y_field="c",
+-    )
++    )["metric.json"]
+ 
+     plot_content = json.loads(plot_string)
+     assert plot_content["data"]["values"] == [
+-        {"b": 2, "c": 3, "rev": "workspace"},
+-        {"b": 3, "c": 4, "rev": "workspace"},
++        {"b": 2, "c": 3, "rev": "working tree"},
++        {"b": 3, "c": 4, "rev": "working tree"},
+     ]
+     assert plot_content["encoding"]["x"]["field"] == "b"
+     assert plot_content["encoding"]["y"]["field"] == "c"
+@@ -455,63 +454,42 @@ def test_plot_choose_columns(tmp_dir, scm, dvc, custom_template):
+ def test_plot_default_choose_column(tmp_dir, scm, dvc):
+     metric = [{"a": 1, "b": 2, "c": 3}, {"a": 2, "b": 3, "c": 4}]
+     _write_json(tmp_dir, metric, "metric.json")
+-    _run_with_metric(tmp_dir, "metric.json", "init", "v1")
++    _run_with(tmp_dir, plots_no_cache=["metric.json"], commit="init", tag="v1")
+ 
+-    plot_string = dvc.plot("metric.json", fields={"b"})
++    plot_string = dvc.plots.show(fields={"b"})["metric.json"]
+ 
+     plot_content = json.loads(plot_string)
+     assert plot_content["data"]["values"] == [
+-        {PlotData.INDEX_FIELD: 0, "b": 2, "rev": "workspace"},
+-        {PlotData.INDEX_FIELD: 1, "b": 3, "rev": "workspace"},
++        {PlotData.INDEX_FIELD: 0, "b": 2, "rev": "working tree"},
++        {PlotData.INDEX_FIELD: 1, "b": 3, "rev": "working tree"},
+     ]
+     assert plot_content["encoding"]["x"]["field"] == PlotData.INDEX_FIELD
+     assert plot_content["encoding"]["y"]["field"] == "b"
+ 
+ 
+-def test_plot_embed(tmp_dir, scm, dvc):
+-    metric = [{"val": 2}, {"val": 3}]
+-    _write_json(tmp_dir, metric, "metric.json")
+-    _run_with_metric(tmp_dir, "metric.json", "first run")
+-
+-    plot_string = dvc.plot("metric.json", embed=True, y_field="val")
+-
+-    page_content = BeautifulSoup(plot_string)
+-    data_dump = json.dumps(
+-        [
+-            {"val": 2, PlotData.INDEX_FIELD: 0, "rev": "workspace"},
+-            {"val": 3, PlotData.INDEX_FIELD: 1, "rev": "workspace"},
+-        ],
+-        sort_keys=True,
+-    )
+-
+-    assert _remove_whitespace(data_dump) in _remove_whitespace(
+-        first(page_content.body.script.contents)
+-    )
+-
+-
+ def test_plot_yaml(tmp_dir, scm, dvc):
+     metric = [{"val": 2}, {"val": 3}]
+     with open("metric.yaml", "w") as fobj:
+         yaml.dump(metric, fobj)
+ 
+-    _run_with_metric(tmp_dir, metric_filename="metric.yaml")
++    _run_with(tmp_dir, plots_no_cache=["metric.yaml"])
+ 
+-    plot_string = dvc.plot("metric.yaml",)
++    plot_string = dvc.plots.show()["metric.yaml"]
+ 
+     plot_content = json.loads(plot_string)
+     assert plot_content["data"]["values"] == [
+-        {"val": 2, PlotData.INDEX_FIELD: 0, "rev": "workspace"},
+-        {"val": 3, PlotData.INDEX_FIELD: 1, "rev": "workspace"},
++        {"val": 2, PlotData.INDEX_FIELD: 0, "rev": "working tree"},
++        {"val": 3, PlotData.INDEX_FIELD: 1, "rev": "working tree"},
+     ]
+ 
+ 
+ def test_raise_on_wrong_field(tmp_dir, scm, dvc):
+     metric = [{"val": 2}, {"val": 3}]
+     _write_json(tmp_dir, metric, "metric.json")
+-    _run_with_metric(tmp_dir, "metric.json", "first run")
++    _run_with(tmp_dir, plots_no_cache=["metric.json"], commit="first run")
+ 
+     with pytest.raises(NoFieldInDataError):
+-        dvc.plot("metric.json", x_field="no_val")
++        dvc.plots.show("metric.json", x_field="no_val")
+ 
+     with pytest.raises(NoFieldInDataError):
+-        dvc.plot("metric.json", y_field="no_val")
++        dvc.plots.show("metric.json", y_field="no_val")
+diff --git a/tests/func/remote/test_gdrive.py b/tests/func/remote/test_gdrive.py
+index 09193fe26..77aacc903 100644
+--- a/tests/func/remote/test_gdrive.py
++++ b/tests/func/remote/test_gdrive.py
+@@ -3,7 +3,6 @@ import posixpath
+ 
+ import configobj
+ 
+-from dvc.compat import fspath
+ from dvc.main import main
+ from dvc.remote import GDriveRemote
+ from dvc.repo import Repo
+@@ -39,13 +38,13 @@ def test_relative_user_credentials_file_config_setting(tmp_dir, dvc):
+     )
+ 
+     # We need to load repo again to test updates to the config
+-    str_path = fspath(tmp_dir)
++    str_path = os.fspath(tmp_dir)
+     repo = Repo(str_path)
+ 
+     # Check that in config we got the path relative to the config file itself
+     # Also, we store posix path even on Windows
+     config = configobj.ConfigObj(repo.config.files["repo"])
+-    assert config['remote "{}"'.format(remote_name)][
++    assert config[f'remote "{remote_name}"'][
+         "gdrive_user_credentials_file"
+     ] == posixpath.join("..", "secrets", "credentials.json")
+ 
+diff --git a/tests/func/remote/test_index.py b/tests/func/remote/test_index.py
+index b331aa159..cc98e7ebf 100644
+--- a/tests/func/remote/test_index.py
++++ b/tests/func/remote/test_index.py
+@@ -1,6 +1,7 @@
++import os
++
+ import pytest
+ 
+-from dvc.compat import fspath
+ from dvc.exceptions import DownloadError, UploadError
+ from dvc.remote.base import BaseRemote
+ from dvc.remote.index import RemoteIndex
+@@ -10,7 +11,7 @@ from dvc.utils.fs import remove
+ 
+ @pytest.fixture(scope="function")
+ def remote(tmp_dir, dvc, tmp_path_factory, mocker):
+-    url = fspath(tmp_path_factory.mktemp("upstream"))
++    url = os.fspath(tmp_path_factory.mktemp("upstream"))
+     dvc.config["remote"]["upstream"] = {"url": url}
+     dvc.config["core"]["remote"] = "upstream"
+ 
+diff --git a/tests/func/test_add.py b/tests/func/test_add.py
+index 6b9f8b6ed..11879f410 100644
+--- a/tests/func/test_add.py
++++ b/tests/func/test_add.py
+@@ -11,7 +11,6 @@ from mock import call, patch
+ 
+ import dvc as dvc_module
+ from dvc.cache import Cache
+-from dvc.compat import fspath
+ from dvc.dvcfile import DVC_FILE_SUFFIX
+ from dvc.exceptions import (
+     DvcException,
+@@ -50,7 +49,7 @@ def test_add(tmp_dir, dvc):
+ 
+ def test_add_unicode(tmp_dir, dvc):
+     with open("\xe1", "wb") as fd:
+-        fd.write("something".encode("utf-8"))
++        fd.write(b"something")
+ 
+     (stage,) = dvc.add("\xe1")
+ 
+@@ -207,7 +206,7 @@ class TestAddLocalRemoteFile(TestDvc):
+ 
+         self.dvc = DvcRepo()
+ 
+-        foo = "remote://{}/{}".format(remote, self.FOO)
++        foo = f"remote://{remote}/{self.FOO}"
+         ret = main(["add", foo])
+         self.assertEqual(ret, 0)
+ 
+@@ -526,12 +525,12 @@ def temporary_windows_drive(tmp_path_factory):
+     new_drive_name = [
+         letter for letter in string.ascii_uppercase if letter not in drives
+     ][0]
+-    new_drive = "{}:".format(new_drive_name)
++    new_drive = f"{new_drive_name}:"
+ 
+     target_path = tmp_path_factory.mktemp("tmp_windows_drive")
+ 
+     set_up_result = windll.kernel32.DefineDosDeviceW(
+-        0, new_drive, fspath(target_path)
++        0, new_drive, os.fspath(target_path)
+     )
+     if set_up_result == 0:
+         raise RuntimeError("Failed to mount windows drive!")
+@@ -541,7 +540,7 @@ def temporary_windows_drive(tmp_path_factory):
+     yield os.path.join(new_drive, os.sep)
+ 
+     tear_down_result = windll.kernel32.DefineDosDeviceW(
+-        DDD_REMOVE_DEFINITION, new_drive, fspath(target_path)
++        DDD_REMOVE_DEFINITION, new_drive, os.fspath(target_path)
+     )
+     if tear_down_result == 0:
+         raise RuntimeError("Could not unmount windows drive!")
+diff --git a/tests/func/test_analytics.py b/tests/func/test_analytics.py
+index 034d8966b..f0e9c71f4 100644
+--- a/tests/func/test_analytics.py
++++ b/tests/func/test_analytics.py
+@@ -1,14 +1,15 @@
++import os
++
+ import mock
+ 
+ from dvc.analytics import _scm_in_use
+-from dvc.compat import fspath
+ from dvc.main import main
+ from dvc.repo import Repo
+ 
+ 
+ @mock.patch("dvc.analytics.send")
+ def test_daemon_analytics(mock_send, tmp_path):
+-    report = fspath(tmp_path)
++    report = os.fspath(tmp_path)
+     assert 0 == main(["daemon", "analytics", report])
+ 
+     mock_send.assert_called_with(report)
+diff --git a/tests/func/test_api.py b/tests/func/test_api.py
+index 2f1aef069..9e7605560 100644
+--- a/tests/func/test_api.py
++++ b/tests/func/test_api.py
+@@ -4,7 +4,6 @@ import pytest
+ 
+ from dvc import api
+ from dvc.api import UrlNotDvcRepoError
+-from dvc.compat import fspath
+ from dvc.exceptions import FileMissingError
+ from dvc.main import main
+ from dvc.path_info import URLInfo
+@@ -36,13 +35,13 @@ def test_get_url(tmp_dir, dvc, remote_url):
+ 
+ 
+ @pytest.mark.parametrize("remote_url", remote_params, indirect=True)
+-def test_get_url_external(erepo_dir, remote_url):
+-    _set_remote_url_and_commit(erepo_dir.dvc, remote_url)
++def test_get_url_external(erepo_dir, remote_url, setup_remote):
++    setup_remote(erepo_dir.dvc, url=remote_url)
+     with erepo_dir.chdir():
+         erepo_dir.dvc_gen("foo", "foo", commit="add foo")
+ 
+     # Using file url to force clone to tmp repo
+-    repo_url = "file://{}".format(erepo_dir)
++    repo_url = f"file://{erepo_dir}"
+     expected_url = URLInfo(remote_url) / "ac/bd18db4cc2f85cedef654fccc4a4d8"
+     assert api.get_url("foo", repo=repo_url) == expected_url
+ 
+@@ -51,10 +50,10 @@ def test_get_url_requires_dvc(tmp_dir, scm):
+     tmp_dir.scm_gen({"foo": "foo"}, commit="initial")
+ 
+     with pytest.raises(UrlNotDvcRepoError, match="not a DVC repository"):
+-        api.get_url("foo", repo=fspath(tmp_dir))
++        api.get_url("foo", repo=os.fspath(tmp_dir))
+ 
+     with pytest.raises(UrlNotDvcRepoError):
+-        api.get_url("foo", repo="file://{}".format(tmp_dir))
++        api.get_url("foo", repo=f"file://{tmp_dir}")
+ 
+ 
+ @pytest.mark.parametrize("remote_url", all_remote_params, indirect=True)
+@@ -71,8 +70,8 @@ def test_open(remote_url, tmp_dir, dvc):
+ 
+ 
+ @pytest.mark.parametrize("remote_url", all_remote_params, indirect=True)
+-def test_open_external(remote_url, erepo_dir):
+-    _set_remote_url_and_commit(erepo_dir.dvc, remote_url)
++def test_open_external(remote_url, erepo_dir, setup_remote):
++    setup_remote(erepo_dir.dvc, url=remote_url)
+ 
+     with erepo_dir.chdir():
+         erepo_dir.dvc_gen("version", "master", commit="add version")
+@@ -87,7 +86,7 @@ def test_open_external(remote_url, erepo_dir):
+     remove(erepo_dir.dvc.cache.local.cache_dir)
+ 
+     # Using file url to force clone to tmp repo
+-    repo_url = "file://{}".format(erepo_dir)
++    repo_url = f"file://{erepo_dir}"
+     with api.open("version", repo=repo_url) as fd:
+         assert fd.read() == "master"
+ 
+@@ -106,17 +105,10 @@ def test_missing(remote_url, tmp_dir, dvc):
+         api.read("foo")
+ 
+ 
+-def _set_remote_url_and_commit(repo, remote_url):
+-    with repo.config.edit() as conf:
+-        conf["remote"]["upstream"]["url"] = remote_url
+-    repo.scm.add([repo.config.files["repo"]])
+-    repo.scm.commit("modify remote")
+-
+-
+ def test_open_scm_controlled(tmp_dir, erepo_dir):
+     erepo_dir.scm_gen({"scm_controlled": "file content"}, commit="create file")
+ 
+-    with api.open("scm_controlled", repo=fspath(erepo_dir)) as fd:
++    with api.open("scm_controlled", repo=os.fspath(erepo_dir)) as fd:
+         assert fd.read() == "file content"
+ 
+ 
+@@ -129,7 +121,7 @@ def test_open_not_cached(dvc):
+     dvc.run(
+         single_stage=True,
+         metrics_no_cache=[metric_file],
+-        cmd=('python -c "{}"'.format(metric_code)),
++        cmd=(f'python -c "{metric_code}"'),
+     )
+ 
+     with api.open(metric_file) as fd:
+diff --git a/tests/func/test_checkout.py b/tests/func/test_checkout.py
+index 24d9b06d0..171f16c93 100644
+--- a/tests/func/test_checkout.py
++++ b/tests/func/test_checkout.py
+@@ -257,7 +257,7 @@ class TestGitIgnoreBasic(CheckoutBase):
+         self.commit_data_file(fname2)
+         self.dvc.run(
+             single_stage=True,
+-            cmd="python {} {} {}".format(self.CODE, self.FOO, fname3),
++            cmd=f"python {self.CODE} {self.FOO} {fname3}",
+             deps=[self.CODE, self.FOO],
+             outs_no_cache=[fname3],
+         )
+diff --git a/tests/func/test_cli.py b/tests/func/test_cli.py
+index 1d89d3fef..bd19836c5 100644
+--- a/tests/func/test_cli.py
++++ b/tests/func/test_cli.py
+@@ -164,7 +164,7 @@ class TestFindRoot(TestDvc):
+     def test(self):
+         os.chdir("..")
+ 
+-        class A(object):
++        class A:
+             quiet = False
+             verbose = True
+ 
+diff --git a/tests/func/test_commit.py b/tests/func/test_commit.py
+index 75f7dbe8a..944ade59a 100644
+--- a/tests/func/test_commit.py
++++ b/tests/func/test_commit.py
+@@ -70,3 +70,13 @@ def test_commit_changed_md5(tmp_dir, dvc):
+         dvc.commit(stage.path)
+ 
+     dvc.commit(stage.path, force=True)
++
++
++def test_commit_no_exec(tmp_dir, dvc):
++    tmp_dir.gen({"dep": "dep", "out": "out"})
++    stage = dvc.run(
++        name="my", cmd="mycmd", deps=["dep"], outs=["out"], no_exec=True
++    )
++    assert dvc.status(stage.path)
++    dvc.commit(stage.path, force=True)
++    assert dvc.status(stage.path) == {}
+diff --git a/tests/func/test_config.py b/tests/func/test_config.py
+index e306e3242..0efd4acea 100644
+--- a/tests/func/test_config.py
++++ b/tests/func/test_config.py
+@@ -34,7 +34,7 @@ class TestConfigCLI(TestDvc):
+     def _do_test(self, local=False):
+         section = "core"
+         field = "analytics"
+-        section_field = "{}.{}".format(section, field)
++        section_field = f"{section}.{field}"
+         value = "True"
+         newvalue = "False"
+ 
+diff --git a/tests/func/test_data_cloud.py b/tests/func/test_data_cloud.py
+index e17633b1b..9a55eae81 100644
+--- a/tests/func/test_data_cloud.py
++++ b/tests/func/test_data_cloud.py
+@@ -6,9 +6,9 @@ import uuid
+ from unittest import SkipTest
+ 
+ import pytest
++from flaky.flaky_decorator import flaky
+ 
+ from dvc.cache import NamedCache
+-from dvc.compat import fspath, fspath_py35
+ from dvc.data_cloud import DataCloud
+ from dvc.external_repo import clean_repos
+ from dvc.main import main
+@@ -87,9 +87,7 @@ class TestDataCloudBase(TestDvc):
+ 
+     def _ensure_should_run(self):
+         if not self.should_test():
+-            raise SkipTest(
+-                "Test {} is disabled".format(self.__class__.__name__)
+-            )
++            raise SkipTest(f"Test {self.__class__.__name__} is disabled")
+ 
+     def _setup_cloud(self):
+         self._ensure_should_run()
+@@ -167,7 +165,7 @@ class TestDataCloudBase(TestDvc):
+             self.cloud.pull(info)
+             self.assertTrue(os.path.exists(cache))
+             self.assertTrue(os.path.isfile(cache))
+-            with open(cache, "r") as fd:
++            with open(cache) as fd:
+                 self.assertEqual(fd.read(), self.FOO_CONTENTS)
+ 
+             self.cloud.pull(info_dir)
+@@ -366,7 +364,7 @@ class TestDataCloudCLIBase(TestDvc):
+         self.assertTrue(os.path.isfile(self.FOO))
+         self.assertTrue(os.path.isdir(self.DATA_DIR))
+ 
+-        with open(cache, "r") as fd:
++        with open(cache) as fd:
+             self.assertEqual(fd.read(), self.FOO_CONTENTS)
+         self.assertTrue(os.path.isfile(cache_dir))
+ 
+@@ -391,9 +389,7 @@ class TestDataCloudCLIBase(TestDvc):
+ 
+     def test(self):
+         if not self.should_test():
+-            raise SkipTest(
+-                "Test {} is disabled".format(self.__class__.__name__)
+-            )
++            raise SkipTest(f"Test {self.__class__.__name__} is disabled")
+         self._test()
+ 
+ 
+@@ -688,14 +684,13 @@ class TestShouldWarnOnNoChecksumInLocalAndRemoteCache(TestDvc):
+         assert self.message_bar_part in self._caplog.text
+ 
+ 
+-def test_verify_checksums(tmp_dir, scm, dvc, mocker, tmp_path_factory):
++def test_verify_checksums(
++    tmp_dir, scm, dvc, mocker, tmp_path_factory, setup_remote
++):
++
++    setup_remote(dvc, name="upstream")
+     tmp_dir.dvc_gen({"file": "file1 content"}, commit="add file")
+     tmp_dir.dvc_gen({"dir": {"subfile": "file2 content"}}, commit="add dir")
+-
+-    dvc.config["remote"]["local_remote"] = {
+-        "url": fspath(tmp_path_factory.mktemp("local_remote"))
+-    }
+-    dvc.config["core"]["remote"] = "local_remote"
+     dvc.push()
+ 
+     # remove artifacts and cache to trigger fetching
+@@ -711,12 +706,13 @@ def test_verify_checksums(tmp_dir, scm, dvc, mocker, tmp_path_factory):
+     # Removing cache will invalidate existing state entries
+     remove(dvc.cache.local.cache_dir)
+ 
+-    dvc.config["remote"]["local_remote"]["verify"] = True
++    dvc.config["remote"]["upstream"]["verify"] = True
+ 
+     dvc.pull()
+     assert checksum_spy.call_count == 3
+ 
+ 
++@flaky(max_runs=3, min_passes=1)
+ @pytest.mark.parametrize("erepo", ["git_dir", "erepo_dir"])
+ def test_pull_git_imports(request, tmp_dir, dvc, scm, erepo):
+     erepo = request.getfixturevalue(erepo)
+@@ -724,8 +720,8 @@ def test_pull_git_imports(request, tmp_dir, dvc, scm, erepo):
+         erepo.scm_gen({"dir": {"bar": "bar"}}, commit="second")
+         erepo.scm_gen("foo", "foo", commit="first")
+ 
+-    dvc.imp(fspath(erepo), "foo")
+-    dvc.imp(fspath(erepo), "dir", out="new_dir", rev="HEAD~")
++    dvc.imp(os.fspath(erepo), "foo")
++    dvc.imp(os.fspath(erepo), "dir", out="new_dir", rev="HEAD~")
+ 
+     assert dvc.pull()["fetched"] == 0
+ 
+@@ -751,8 +747,8 @@ def test_pull_external_dvc_imports(tmp_dir, dvc, scm, erepo_dir):
+         os.remove("foo")
+         shutil.rmtree("dir")
+ 
+-    dvc.imp(fspath(erepo_dir), "foo")
+-    dvc.imp(fspath(erepo_dir), "dir", out="new_dir", rev="HEAD~")
++    dvc.imp(os.fspath(erepo_dir), "foo")
++    dvc.imp(os.fspath(erepo_dir), "dir", out="new_dir", rev="HEAD~")
+ 
+     assert dvc.pull()["fetched"] == 0
+ 
+@@ -784,13 +780,15 @@ def recurse_list_dir(d):
+     ]
+ 
+ 
+-def test_dvc_pull_pipeline_stages(tmp_dir, dvc, local_remote, run_copy):
++def test_dvc_pull_pipeline_stages(tmp_dir, dvc, run_copy, setup_remote):
++    setup_remote(dvc)
+     (stage0,) = tmp_dir.dvc_gen("foo", "foo")
+     stage1 = run_copy("foo", "bar", single_stage=True)
+     stage2 = run_copy("bar", "foobar", name="copy-bar-foobar")
++    dvc.push()
++
+     outs = ["foo", "bar", "foobar"]
+ 
+-    dvc.push()
+     clean(outs, dvc)
+     dvc.pull()
+     assert all((tmp_dir / file).exists() for file in outs)
+@@ -814,7 +812,8 @@ def test_dvc_pull_pipeline_stages(tmp_dir, dvc, local_remote, run_copy):
+     assert set(stats["added"]) == set(outs)
+ 
+ 
+-def test_pipeline_file_target_ops(tmp_dir, dvc, local_remote, run_copy):
++def test_pipeline_file_target_ops(tmp_dir, dvc, run_copy, setup_remote):
++    remote_path = setup_remote(dvc)
+     tmp_dir.dvc_gen("foo", "foo")
+     run_copy("foo", "bar", single_stage=True)
+ 
+@@ -829,8 +828,11 @@ def test_pipeline_file_target_ops(tmp_dir, dvc, local_remote, run_copy):
+     remove(dvc.stage_cache.cache_dir)
+ 
+     dvc.push()
++
++    outs = ["foo", "bar", "lorem", "ipsum", "baz", "lorem2"]
++
+     # each one's a copy of other, hence 3
+-    assert len(recurse_list_dir(fspath_py35(local_remote))) == 3
++    assert len(recurse_list_dir(remote_path)) == 3
+ 
+     clean(outs, dvc)
+     assert set(dvc.pull(["dvc.yaml"])["added"]) == {"lorem2", "baz"}
+@@ -839,13 +841,15 @@ def test_pipeline_file_target_ops(tmp_dir, dvc, local_remote, run_copy):
+     assert set(dvc.pull()["added"]) == set(outs)
+ 
+     # clean everything in remote and push
+-    clean(local_remote.iterdir())
++    from tests.dir_helpers import TmpDir
++
++    clean(TmpDir(remote_path).iterdir())
+     dvc.push(["dvc.yaml:copy-ipsum-baz"])
+-    assert len(recurse_list_dir(fspath_py35(local_remote))) == 1
++    assert len(recurse_list_dir(remote_path)) == 1
+ 
+-    clean(local_remote.iterdir())
++    clean(TmpDir(remote_path).iterdir())
+     dvc.push(["dvc.yaml"])
+-    assert len(recurse_list_dir(fspath_py35(local_remote))) == 2
++    assert len(recurse_list_dir(remote_path)) == 2
+ 
+     with pytest.raises(StageNotFound):
+         dvc.push(["dvc.yaml:StageThatDoesNotExist"])
+@@ -862,8 +866,10 @@ def test_pipeline_file_target_ops(tmp_dir, dvc, local_remote, run_copy):
+         ({}, "Everything is up to date"),
+     ],
+ )
+-def test_push_stats(tmp_dir, dvc, fs, msg, local_remote, caplog):
++def test_push_stats(tmp_dir, dvc, fs, msg, caplog, setup_remote):
++    setup_remote(dvc)
+     tmp_dir.dvc_gen(fs)
++
+     caplog.clear()
+     with caplog.at_level(level=logging.INFO, logger="dvc"):
+         main(["push"])
+@@ -878,7 +884,8 @@ def test_push_stats(tmp_dir, dvc, fs, msg, local_remote, caplog):
+         ({}, "Everything is up to date."),
+     ],
+ )
+-def test_fetch_stats(tmp_dir, dvc, fs, msg, local_remote, caplog):
++def test_fetch_stats(tmp_dir, dvc, fs, msg, caplog, setup_remote):
++    setup_remote(dvc)
+     tmp_dir.dvc_gen(fs)
+     dvc.push()
+     clean(list(fs.keys()), dvc)
+@@ -888,7 +895,8 @@ def test_fetch_stats(tmp_dir, dvc, fs, msg, local_remote, caplog):
+     assert msg in caplog.text
+ 
+ 
+-def test_pull_stats(tmp_dir, dvc, local_remote, caplog):
++def test_pull_stats(tmp_dir, dvc, caplog, setup_remote):
++    setup_remote(dvc)
+     tmp_dir.dvc_gen({"foo": "foo", "bar": "bar"})
+     dvc.push()
+     clean(["foo", "bar"], dvc)
+diff --git a/tests/func/test_diff.py b/tests/func/test_diff.py
+index 66579c2fd..0cd45966d 100644
+--- a/tests/func/test_diff.py
++++ b/tests/func/test_diff.py
+@@ -4,7 +4,6 @@ import os
+ import pytest
+ from funcy import first
+ 
+-from dvc.compat import fspath
+ from dvc.exceptions import DvcException
+ from dvc.utils.fs import remove
+ 
+@@ -38,7 +37,7 @@ def test_no_cache_entry(tmp_dir, scm, dvc):
+     tmp_dir.dvc_gen({"dir": {"1": "1", "2": "2"}})
+     tmp_dir.dvc_gen("file", "second")
+ 
+-    remove(fspath(tmp_dir / ".dvc" / "cache"))
++    remove(tmp_dir / ".dvc" / "cache")
+     (tmp_dir / ".dvc" / "tmp" / "state").unlink()
+ 
+     dir_checksum = "5fb6b29836c388e093ca0715c872fe2a.dir"
+@@ -214,3 +213,14 @@ def test_diff_dirty(tmp_dir, scm, dvc):
+ def test_no_changes(tmp_dir, scm, dvc):
+     tmp_dir.dvc_gen("file", "first", commit="add a file")
+     assert dvc.diff() == {}
++
++
++def test_no_commits(tmp_dir):
++    from dvc.repo import Repo
++    from dvc.scm.git import Git
++    from tests.dir_helpers import git_init
++
++    git_init(".")
++    assert Git().no_commits
++
++    assert Repo.init().diff() == {}
+diff --git a/tests/func/test_external_repo.py b/tests/func/test_external_repo.py
+index 34236b418..3adefbb30 100644
+--- a/tests/func/test_external_repo.py
++++ b/tests/func/test_external_repo.py
+@@ -2,7 +2,6 @@ import os
+ 
+ from mock import patch
+ 
+-from dvc.compat import fspath
+ from dvc.external_repo import external_repo
+ from dvc.remote import LocalRemote
+ from dvc.scm.git import Git
+@@ -16,7 +15,7 @@ def test_external_repo(erepo_dir):
+             erepo_dir.dvc_gen("file", "branch", commit="create file on branch")
+         erepo_dir.dvc_gen("file", "master", commit="create file on master")
+ 
+-    url = fspath(erepo_dir)
++    url = os.fspath(erepo_dir)
+ 
+     with patch.object(Git, "clone", wraps=Git.clone) as mock:
+         with external_repo(url) as repo:
+@@ -31,7 +30,7 @@ def test_external_repo(erepo_dir):
+ 
+ 
+ def test_source_change(erepo_dir):
+-    url = fspath(erepo_dir)
++    url = os.fspath(erepo_dir)
+     with external_repo(url) as repo:
+         old_rev = repo.scm.get_rev()
+ 
+@@ -43,14 +42,16 @@ def test_source_change(erepo_dir):
+     assert old_rev != new_rev
+ 
+ 
+-def test_cache_reused(erepo_dir, mocker):
++def test_cache_reused(erepo_dir, mocker, setup_remote):
++    setup_remote(erepo_dir.dvc)
+     with erepo_dir.chdir():
+         erepo_dir.dvc_gen("file", "text", commit="add file")
++    erepo_dir.dvc.push()
+ 
+     download_spy = mocker.spy(LocalRemote, "download")
+ 
+     # Use URL to prevent any fishy optimizations
+-    url = "file://{}".format(erepo_dir)
++    url = f"file://{erepo_dir}"
+     with external_repo(url) as repo:
+         repo.fetch()
+         assert download_spy.mock.call_count == 1
+@@ -63,7 +64,9 @@ def test_cache_reused(erepo_dir, mocker):
+ 
+ 
+ def test_known_sha(erepo_dir):
+-    url = "file://{}".format(erepo_dir)
++    erepo_dir.scm.commit("init")
++
++    url = f"file://{erepo_dir}"
+     with external_repo(url) as repo:
+         rev = repo.scm.get_rev()
+         prev_rev = repo.scm.resolve_rev("HEAD^")
+@@ -85,14 +88,14 @@ def test_pull_subdir_file(tmp_dir, erepo_dir):
+         erepo_dir.dvc_add(subdir / "file", commit="create file")
+ 
+     dest = tmp_dir / "file"
+-    with external_repo(fspath(erepo_dir)) as repo:
++    with external_repo(os.fspath(erepo_dir)) as repo:
+         repo.pull_to(os.path.join("subdir", "file"), dest)
+ 
+     assert dest.is_file()
+     assert dest.read_text() == "contents"
+ 
+ 
+-def test_relative_remote(erepo_dir, tmp_dir):
++def test_relative_remote(erepo_dir, tmp_dir, setup_remote):
+     # these steps reproduce the script on this issue:
+     # https://github.com/iterative/dvc/issues/2756
+     with erepo_dir.chdir():
+@@ -100,19 +103,14 @@ def test_relative_remote(erepo_dir, tmp_dir):
+ 
+     upstream_dir = tmp_dir
+     upstream_url = relpath(upstream_dir, erepo_dir)
+-    with erepo_dir.dvc.config.edit() as conf:
+-        conf["remote"]["upstream"] = {"url": upstream_url}
+-        conf["core"]["remote"] = "upstream"
++    setup_remote(erepo_dir.dvc, url=upstream_url, name="upstream")
+ 
+-    erepo_dir.scm_add(
+-        erepo_dir.dvc.config.files["repo"], commit="Update dvc config"
+-    )
+     erepo_dir.dvc.push()
+ 
+     (erepo_dir / "file").unlink()
+     remove(erepo_dir.dvc.cache.local.cache_dir)
+ 
+-    url = fspath(erepo_dir)
++    url = os.fspath(erepo_dir)
+ 
+     with external_repo(url) as repo:
+         assert os.path.isabs(repo.config["remote"]["upstream"]["url"])
+diff --git a/tests/func/test_gc.py b/tests/func/test_gc.py
+index 6eace936c..4ed886290 100644
+--- a/tests/func/test_gc.py
++++ b/tests/func/test_gc.py
+@@ -6,7 +6,6 @@ import configobj
+ import pytest
+ from git import Repo
+ 
+-from dvc.compat import fspath
+ from dvc.exceptions import CollectCacheError
+ from dvc.main import main
+ from dvc.remote.local import LocalRemote
+@@ -238,18 +237,18 @@ def test_gc_without_workspace_raises_error(tmp_dir, dvc):
+         dvc.gc(force=True, workspace=False)
+ 
+ 
+-def test_gc_cloud_with_or_without_specifier(tmp_dir, erepo_dir):
++def test_gc_cloud_with_or_without_specifier(tmp_dir, erepo_dir, setup_remote):
+     dvc = erepo_dir.dvc
+-    with erepo_dir.chdir():
+-        from dvc.exceptions import InvalidArgumentError
++    setup_remote(dvc)
++    from dvc.exceptions import InvalidArgumentError
+ 
+-        with pytest.raises(InvalidArgumentError):
+-            dvc.gc(force=True, cloud=True)
++    with pytest.raises(InvalidArgumentError):
++        dvc.gc(force=True, cloud=True)
+ 
+-        dvc.gc(cloud=True, all_tags=True)
+-        dvc.gc(cloud=True, all_commits=True)
+-        dvc.gc(cloud=True, all_branches=True)
+-        dvc.gc(cloud=True, all_commits=False, all_branches=True, all_tags=True)
++    dvc.gc(cloud=True, all_tags=True)
++    dvc.gc(cloud=True, all_commits=True)
++    dvc.gc(cloud=True, all_branches=True)
++    dvc.gc(cloud=True, all_commits=False, all_branches=True, all_tags=True)
+ 
+ 
+ def test_gc_without_workspace_on_tags_branches_commits(tmp_dir, dvc):
+@@ -295,20 +294,15 @@ def test_gc_with_possible_args_positive(tmp_dir, dvc):
+         assert main(["gc", "-vf", flag]) == 0
+ 
+ 
+-def test_gc_cloud_positive(tmp_dir, dvc, tmp_path_factory):
+-    with dvc.config.edit() as conf:
+-        storage = fspath(tmp_path_factory.mktemp("test_remote_base"))
+-        conf["remote"]["local_remote"] = {"url": storage}
+-        conf["core"]["remote"] = "local_remote"
+-
+-    dvc.push()
++def test_gc_cloud_positive(tmp_dir, dvc, tmp_path_factory, setup_remote):
++    setup_remote(dvc)
+ 
+     for flag in ["-cw", "-ca", "-cT", "-caT", "-cwT"]:
+         assert main(["gc", "-vf", flag]) == 0
+ 
+ 
+ def test_gc_cloud_remove_order(tmp_dir, scm, dvc, tmp_path_factory, mocker):
+-    storage = fspath(tmp_path_factory.mktemp("test_remote_base"))
++    storage = os.fspath(tmp_path_factory.mktemp("test_remote_base"))
+     dvc.config["remote"]["local_remote"] = {"url": storage}
+     dvc.config["core"]["remote"] = "local_remote"
+ 
+diff --git a/tests/func/test_get.py b/tests/func/test_get.py
+index b05d06b69..0e1ae4226 100644
+--- a/tests/func/test_get.py
++++ b/tests/func/test_get.py
+@@ -4,7 +4,6 @@ import os
+ import pytest
+ 
+ from dvc.cache import Cache
+-from dvc.compat import fspath
+ from dvc.exceptions import PathMissingError
+ from dvc.main import main
+ from dvc.repo import Repo
+@@ -18,7 +17,7 @@ def test_get_repo_file(tmp_dir, erepo_dir):
+     with erepo_dir.chdir():
+         erepo_dir.dvc_gen("file", "contents", commit="create file")
+ 
+-    Repo.get(fspath(erepo_dir), "file", "file_imported")
++    Repo.get(os.fspath(erepo_dir), "file", "file_imported")
+ 
+     assert os.path.isfile("file_imported")
+     assert (tmp_dir / "file_imported").read_text() == "contents"
+@@ -28,10 +27,10 @@ def test_get_repo_dir(tmp_dir, erepo_dir):
+     with erepo_dir.chdir():
+         erepo_dir.dvc_gen({"dir": {"file": "contents"}}, commit="create dir")
+ 
+-    Repo.get(fspath(erepo_dir), "dir", "dir_imported")
++    Repo.get(os.fspath(erepo_dir), "dir", "dir_imported")
+ 
+     assert os.path.isdir("dir_imported")
+-    trees_equal(fspath(erepo_dir / "dir"), "dir_imported")
++    trees_equal(erepo_dir / "dir", "dir_imported")
+ 
+ 
+ def test_get_git_file(tmp_dir, erepo_dir):
+@@ -40,7 +39,7 @@ def test_get_git_file(tmp_dir, erepo_dir):
+ 
+     erepo_dir.scm_gen({src: "hello"}, commit="add a regular file")
+ 
+-    Repo.get(fspath(erepo_dir), src, dst)
++    Repo.get(os.fspath(erepo_dir), src, dst)
+ 
+     assert (tmp_dir / dst).is_file()
+     assert (tmp_dir / dst).read_text() == "hello"
+@@ -52,10 +51,10 @@ def test_get_git_dir(tmp_dir, erepo_dir):
+ 
+     erepo_dir.scm_gen({src: {"file.txt": "hello"}}, commit="add a regular dir")
+ 
+-    Repo.get(fspath(erepo_dir), src, dst)
++    Repo.get(os.fspath(erepo_dir), src, dst)
+ 
+     assert (tmp_dir / dst).is_dir()
+-    trees_equal(fspath(erepo_dir / src), fspath(tmp_dir / dst))
++    trees_equal(erepo_dir / src, tmp_dir / dst)
+ 
+ 
+ def test_cache_type_is_properly_overridden(tmp_dir, erepo_dir):
+@@ -69,7 +68,7 @@ def test_cache_type_is_properly_overridden(tmp_dir, erepo_dir):
+         erepo_dir.dvc_gen("file", "contents", "create file")
+     assert System.is_symlink(erepo_dir / "file")
+ 
+-    Repo.get(fspath(erepo_dir), "file", "file_imported")
++    Repo.get(os.fspath(erepo_dir), "file", "file_imported")
+ 
+     assert not System.is_symlink("file_imported")
+     assert (tmp_dir / "file_imported").read_text() == "contents"
+@@ -79,20 +78,20 @@ def test_get_repo_rev(tmp_dir, erepo_dir):
+     with erepo_dir.chdir(), erepo_dir.branch("branch", new=True):
+         erepo_dir.dvc_gen("file", "contents", commit="create file on branch")
+ 
+-    Repo.get(fspath(erepo_dir), "file", "file_imported", rev="branch")
++    Repo.get(os.fspath(erepo_dir), "file", "file_imported", rev="branch")
+     assert (tmp_dir / "file_imported").read_text() == "contents"
+ 
+ 
+ def test_get_from_non_dvc_repo(tmp_dir, git_dir):
+     git_dir.scm_gen({"some_file": "contents"}, commit="create file")
+ 
+-    Repo.get(fspath(git_dir), "some_file", "file_imported")
++    Repo.get(os.fspath(git_dir), "some_file", "file_imported")
+     assert (tmp_dir / "file_imported").read_text() == "contents"
+ 
+ 
+ def test_get_a_dvc_file(tmp_dir, erepo_dir):
+     with pytest.raises(GetDVCFileError):
+-        Repo.get(fspath(erepo_dir), "some_file.dvc")
++        Repo.get(os.fspath(erepo_dir), "some_file.dvc")
+ 
+ 
+ # https://github.com/iterative/dvc/pull/2837#discussion_r352123053
+@@ -102,9 +101,11 @@ def test_get_full_dvc_path(tmp_dir, erepo_dir, tmp_path_factory):
+     external_data.write_text("ext_data")
+ 
+     with erepo_dir.chdir():
+-        erepo_dir.dvc_add(fspath(external_data), commit="add external data")
++        erepo_dir.dvc_add(os.fspath(external_data), commit="add external data")
+ 
+-    Repo.get(fspath(erepo_dir), fspath(external_data), "ext_data_imported")
++    Repo.get(
++        os.fspath(erepo_dir), os.fspath(external_data), "ext_data_imported"
++    )
+     assert (tmp_dir / "ext_data_imported").read_text() == "ext_data"
+ 
+ 
+@@ -120,7 +121,7 @@ def test_non_cached_output(tmp_dir, erepo_dir):
+         )
+         erepo_dir.scm_add([src, src + ".dvc"], commit="add non-cached output")
+ 
+-    Repo.get(fspath(erepo_dir), src, dst)
++    Repo.get(os.fspath(erepo_dir), src, dst)
+ 
+     assert (tmp_dir / dst).is_file()
+     # NOTE: using strip() to account for `echo` differences on win and *nix
+@@ -130,17 +131,17 @@ def test_non_cached_output(tmp_dir, erepo_dir):
+ # https://github.com/iterative/dvc/pull/2837#discussion_r352123053
+ def test_absolute_file_outside_repo(tmp_dir, erepo_dir):
+     with pytest.raises(PathMissingError):
+-        Repo.get(fspath(erepo_dir), "/root/")
++        Repo.get(os.fspath(erepo_dir), "/root/")
+ 
+ 
+ def test_absolute_file_outside_git_repo(tmp_dir, git_dir):
+     with pytest.raises(PathMissingError):
+-        Repo.get(fspath(git_dir), "/root/")
++        Repo.get(os.fspath(git_dir), "/root/")
+ 
+ 
+ def test_unknown_path(tmp_dir, erepo_dir):
+     with pytest.raises(PathMissingError):
+-        Repo.get(fspath(erepo_dir), "a_non_existing_file")
++        Repo.get(os.fspath(erepo_dir), "a_non_existing_file")
+ 
+ 
+ @pytest.mark.parametrize("dname", [".", "dir", "dir/subdir"])
+@@ -150,7 +151,7 @@ def test_get_to_dir(tmp_dir, erepo_dir, dname):
+ 
+     makedirs(dname, exist_ok=True)
+ 
+-    Repo.get(fspath(erepo_dir), "file", dname)
++    Repo.get(os.fspath(erepo_dir), "file", dname)
+ 
+     assert (tmp_dir / dname).is_dir()
+     assert (tmp_dir / dname / "file").read_text() == "contents"
+@@ -164,7 +165,7 @@ def test_get_from_non_dvc_master(tmp_dir, git_dir, caplog):
+     caplog.clear()
+ 
+     with caplog.at_level(logging.INFO, logger="dvc"):
+-        Repo.get(fspath(git_dir), "some_file", out="some_dst", rev="branch")
++        Repo.get(os.fspath(git_dir), "some_file", out="some_dst", rev="branch")
+ 
+     assert caplog.text == ""
+     assert (tmp_dir / "some_dst").read_text() == "some text"
+@@ -183,34 +184,45 @@ def test_get_file_from_dir(tmp_dir, erepo_dir):
+             commit="create dir",
+         )
+ 
+-    Repo.get(fspath(erepo_dir), os.path.join("dir", "1"))
++    Repo.get(os.fspath(erepo_dir), os.path.join("dir", "1"))
+     assert (tmp_dir / "1").read_text() == "1"
+ 
+-    Repo.get(fspath(erepo_dir), os.path.join("dir", "2"), out="file")
++    Repo.get(os.fspath(erepo_dir), os.path.join("dir", "2"), out="file")
+     assert (tmp_dir / "file").read_text() == "2"
+ 
+-    Repo.get(fspath(erepo_dir), os.path.join("dir", "subdir"))
++    Repo.get(os.fspath(erepo_dir), os.path.join("dir", "subdir"))
+     assert (tmp_dir / "subdir" / "foo").read_text() == "foo"
+     assert (tmp_dir / "subdir" / "bar").read_text() == "bar"
+ 
+-    Repo.get(fspath(erepo_dir), os.path.join("dir", "subdir", "foo"), out="X")
++    Repo.get(
++        os.fspath(erepo_dir), os.path.join("dir", "subdir", "foo"), out="X"
++    )
+     assert (tmp_dir / "X").read_text() == "foo"
+ 
+ 
+-def test_get_url_positive(tmp_dir, erepo_dir, caplog):
++def test_get_url_positive(tmp_dir, erepo_dir, caplog, setup_remote):
++    setup_remote(erepo_dir.dvc)
+     with erepo_dir.chdir():
+         erepo_dir.dvc_gen("foo", "foo")
++    erepo_dir.dvc.push()
+ 
+     caplog.clear()
+     with caplog.at_level(logging.ERROR, logger="dvc"):
+-        assert main(["get", fspath(erepo_dir), "foo", "--show-url"]) == 0
++        assert main(["get", os.fspath(erepo_dir), "foo", "--show-url"]) == 0
+         assert caplog.text == ""
+ 
+ 
+ def test_get_url_not_existing(tmp_dir, erepo_dir, caplog):
+     with caplog.at_level(logging.ERROR, logger="dvc"):
+         assert (
+-            main(["get", fspath(erepo_dir), "not-existing-file", "--show-url"])
++            main(
++                [
++                    "get",
++                    os.fspath(erepo_dir),
++                    "not-existing-file",
++                    "--show-url",
++                ]
++            )
+             == 1
+         )
+         assert "failed to show URL" in caplog.text
+@@ -220,21 +232,23 @@ def test_get_url_git_only_repo(tmp_dir, scm, caplog):
+     tmp_dir.scm_gen({"foo": "foo"}, commit="initial")
+ 
+     with caplog.at_level(logging.ERROR):
+-        assert main(["get", fspath(tmp_dir), "foo", "--show-url"]) == 1
++        assert main(["get", os.fspath(tmp_dir), "foo", "--show-url"]) == 1
+         assert "failed to show URL" in caplog.text
+ 
+ 
+ def test_get_pipeline_tracked_outs(
+-    tmp_dir, dvc, scm, git_dir, local_remote, run_copy
++    tmp_dir, dvc, scm, git_dir, run_copy, setup_remote
+ ):
+     from dvc.dvcfile import PIPELINE_FILE, PIPELINE_LOCK
+ 
++    setup_remote(dvc)
+     tmp_dir.gen("foo", "foo")
+     run_copy("foo", "bar", name="copy-foo-bar")
++    dvc.push()
++
+     dvc.scm.add([PIPELINE_FILE, PIPELINE_LOCK])
+     dvc.scm.commit("add pipeline stage")
+-    dvc.push()
+ 
+     with git_dir.chdir():
+-        Repo.get("file:///{}".format(fspath(tmp_dir)), "bar", out="baz")
++        Repo.get("file:///{}".format(os.fspath(tmp_dir)), "bar", out="baz")
+         assert (git_dir / "baz").read_text() == "foo"
+diff --git a/tests/func/test_ignore.py b/tests/func/test_ignore.py
+index 702de384e..65ad950c4 100644
+--- a/tests/func/test_ignore.py
++++ b/tests/func/test_ignore.py
+@@ -1,10 +1,8 @@
+-# encoding: utf-8
+ import os
+ import shutil
+ 
+ import pytest
+ 
+-from dvc.compat import fspath, fspath_py35
+ from dvc.exceptions import DvcIgnoreInCollectedDirError
+ from dvc.ignore import (
+     DvcIgnore,
+@@ -101,7 +99,9 @@ def test_ignore_collecting_dvcignores(tmp_dir, dvc, dname):
+     assert len(dvc.tree.dvcignore.ignores) == 3
+     assert DvcIgnoreDirs([".git", ".hg", ".dvc"]) in dvc.tree.dvcignore.ignores
+     assert (
+-        DvcIgnorePatterns(fspath(top_ignore_file), WorkingTree(dvc.root_dir))
++        DvcIgnorePatterns(
++            os.fspath(top_ignore_file), WorkingTree(dvc.root_dir)
++        )
+         in dvc.tree.dvcignore.ignores
+     )
+     assert any(
+@@ -139,13 +139,13 @@ def test_match_nested(tmp_dir, dvc):
+     )
+ 
+     remote = LocalRemote(dvc, {})
+-    result = {fspath(f) for f in remote.walk_files(".")}
++    result = {os.fspath(f) for f in remote.walk_files(".")}
+     assert result == {".dvcignore", "foo"}
+ 
+ 
+ def test_ignore_external(tmp_dir, scm, dvc, tmp_path_factory):
+     tmp_dir.gen(".dvcignore", "*.backup\ntmp")
+-    ext_dir = TmpDir(fspath_py35(tmp_path_factory.mktemp("external_dir")))
++    ext_dir = TmpDir(os.fspath(tmp_path_factory.mktemp("external_dir")))
+     ext_dir.gen({"y.backup": "y", "tmp": "ext tmp"})
+ 
+     remote = LocalRemote(dvc, {})
+diff --git a/tests/func/test_import.py b/tests/func/test_import.py
+index 3eddc1148..6ab037c8b 100644
+--- a/tests/func/test_import.py
++++ b/tests/func/test_import.py
+@@ -6,7 +6,6 @@ from mock import patch
+ 
+ import dvc.data_cloud as cloud
+ from dvc.cache import Cache
+-from dvc.compat import fspath
+ from dvc.config import NoRemoteError
+ from dvc.dvcfile import Dvcfile
+ from dvc.exceptions import DownloadError, PathMissingError
+@@ -19,13 +18,13 @@ def test_import(tmp_dir, scm, dvc, erepo_dir):
+     with erepo_dir.chdir():
+         erepo_dir.dvc_gen("foo", "foo content", commit="create foo")
+ 
+-    stage = dvc.imp(fspath(erepo_dir), "foo", "foo_imported")
++    stage = dvc.imp(os.fspath(erepo_dir), "foo", "foo_imported")
+ 
+     assert os.path.isfile("foo_imported")
+     assert (tmp_dir / "foo_imported").read_text() == "foo content"
+     assert scm.repo.git.check_ignore("foo_imported")
+     assert stage.deps[0].def_repo == {
+-        "url": fspath(erepo_dir),
++        "url": os.fspath(erepo_dir),
+         "rev_lock": erepo_dir.scm.get_rev(),
+     }
+ 
+@@ -37,12 +36,12 @@ def test_import_git_file(tmp_dir, scm, dvc, git_dir, src_is_dvc):
+ 
+     git_dir.scm_gen("src", "hello", commit="add a git file")
+ 
+-    stage = tmp_dir.dvc.imp(fspath(git_dir), "src", "dst")
++    stage = tmp_dir.dvc.imp(os.fspath(git_dir), "src", "dst")
+ 
+     assert (tmp_dir / "dst").read_text() == "hello"
+-    assert tmp_dir.scm.repo.git.check_ignore(fspath(tmp_dir / "dst"))
++    assert tmp_dir.scm.repo.git.check_ignore(os.fspath(tmp_dir / "dst"))
+     assert stage.deps[0].def_repo == {
+-        "url": fspath(git_dir),
++        "url": os.fspath(git_dir),
+         "rev_lock": git_dir.scm.get_rev(),
+     }
+ 
+@@ -59,12 +58,10 @@ def test_import_cached_file(erepo_dir, tmp_dir, dvc, scm, monkeypatch):
+ 
+     remote_exception = NoRemoteError("dvc import")
+     with patch.object(cloud.DataCloud, "pull", side_effect=remote_exception):
+-        tmp_dir.dvc.imp(fspath(erepo_dir), src, dst)
++        tmp_dir.dvc.imp(os.fspath(erepo_dir), src, dst)
+ 
+     assert (tmp_dir / dst).is_file()
+-    assert filecmp.cmp(
+-        fspath(erepo_dir / src), fspath(tmp_dir / dst), shallow=False
+-    )
++    assert filecmp.cmp(erepo_dir / src, tmp_dir / dst, shallow=False)
+ 
+ 
+ @pytest.mark.parametrize("src_is_dvc", [True, False])
+@@ -74,13 +71,13 @@ def test_import_git_dir(tmp_dir, scm, dvc, git_dir, src_is_dvc):
+ 
+     git_dir.scm_gen({"src": {"file.txt": "hello"}}, commit="add a dir")
+ 
+-    stage = dvc.imp(fspath(git_dir), "src", "dst")
++    stage = dvc.imp(os.fspath(git_dir), "src", "dst")
+ 
+     assert (tmp_dir / "dst").is_dir()
+-    trees_equal(fspath(git_dir / "src"), fspath(tmp_dir / "dst"))
+-    assert tmp_dir.scm.repo.git.check_ignore(fspath(tmp_dir / "dst"))
++    trees_equal(git_dir / "src", tmp_dir / "dst")
++    assert tmp_dir.scm.repo.git.check_ignore(os.fspath(tmp_dir / "dst"))
+     assert stage.deps[0].def_repo == {
+-        "url": fspath(git_dir),
++        "url": os.fspath(git_dir),
+         "rev_lock": git_dir.scm.get_rev(),
+     }
+ 
+@@ -89,13 +86,13 @@ def test_import_dir(tmp_dir, scm, dvc, erepo_dir):
+     with erepo_dir.chdir():
+         erepo_dir.dvc_gen({"dir": {"foo": "foo content"}}, commit="create dir")
+ 
+-    stage = dvc.imp(fspath(erepo_dir), "dir", "dir_imported")
++    stage = dvc.imp(os.fspath(erepo_dir), "dir", "dir_imported")
+ 
+     assert os.path.isdir("dir_imported")
+-    trees_equal(fspath(erepo_dir / "dir"), "dir_imported")
++    trees_equal(erepo_dir / "dir", "dir_imported")
+     assert scm.repo.git.check_ignore("dir_imported")
+     assert stage.deps[0].def_repo == {
+-        "url": fspath(erepo_dir),
++        "url": os.fspath(erepo_dir),
+         "rev_lock": erepo_dir.scm.get_rev(),
+     }
+ 
+@@ -113,25 +110,27 @@ def test_import_file_from_dir(tmp_dir, scm, dvc, erepo_dir):
+             commit="create dir",
+         )
+ 
+-    stage = dvc.imp(fspath(erepo_dir), os.path.join("dir", "1"))
++    stage = dvc.imp(os.fspath(erepo_dir), os.path.join("dir", "1"))
+ 
+     assert (tmp_dir / "1").read_text() == "1"
+     assert scm.repo.git.check_ignore("1")
+     assert stage.deps[0].def_repo == {
+-        "url": fspath(erepo_dir),
++        "url": os.fspath(erepo_dir),
+         "rev_lock": erepo_dir.scm.get_rev(),
+     }
+ 
+-    dvc.imp(fspath(erepo_dir), os.path.join("dir", "2"), out="file")
++    dvc.imp(os.fspath(erepo_dir), os.path.join("dir", "2"), out="file")
+     assert (tmp_dir / "file").read_text() == "2"
+     assert (tmp_dir / "file.dvc").exists()
+ 
+-    dvc.imp(fspath(erepo_dir), os.path.join("dir", "subdir"))
++    dvc.imp(os.fspath(erepo_dir), os.path.join("dir", "subdir"))
+     assert (tmp_dir / "subdir" / "foo").read_text() == "foo"
+     assert (tmp_dir / "subdir" / "bar").read_text() == "bar"
+     assert (tmp_dir / "subdir.dvc").exists()
+ 
+-    dvc.imp(fspath(erepo_dir), os.path.join("dir", "subdir", "foo"), out="X")
++    dvc.imp(
++        os.fspath(erepo_dir), os.path.join("dir", "subdir", "foo"), out="X"
++    )
+     assert (tmp_dir / "X").read_text() == "foo"
+     assert (tmp_dir / "X.dvc").exists()
+ 
+@@ -142,22 +141,20 @@ def test_import_non_cached(erepo_dir, tmp_dir, dvc, scm):
+ 
+     with erepo_dir.chdir():
+         erepo_dir.dvc.run(
+-            cmd="echo hello > {}".format(src),
+-            outs_no_cache=[src],
+-            single_stage=True,
++            cmd=f"echo hello > {src}", outs_no_cache=[src], single_stage=True,
+         )
+ 
+-    erepo_dir.scm_add([fspath(erepo_dir / src)], commit="add a non-cached out")
++    erepo_dir.scm_add(
++        [os.fspath(erepo_dir / src)], commit="add a non-cached out"
++    )
+ 
+-    stage = tmp_dir.dvc.imp(fspath(erepo_dir), src, dst)
++    stage = tmp_dir.dvc.imp(os.fspath(erepo_dir), src, dst)
+ 
+     assert (tmp_dir / dst).is_file()
+-    assert filecmp.cmp(
+-        fspath(erepo_dir / src), fspath(tmp_dir / dst), shallow=False
+-    )
++    assert filecmp.cmp(erepo_dir / src, tmp_dir / dst, shallow=False)
+     assert tmp_dir.scm.repo.git.check_ignore(dst)
+     assert stage.deps[0].def_repo == {
+-        "url": fspath(erepo_dir),
++        "url": os.fspath(erepo_dir),
+         "rev_lock": erepo_dir.scm.get_rev(),
+     }
+ 
+@@ -168,12 +165,12 @@ def test_import_rev(tmp_dir, scm, dvc, erepo_dir):
+         erepo_dir.dvc_gen("foo", "foo content", commit="create foo on branch")
+         rev = erepo_dir.scm.get_rev()
+ 
+-    stage = dvc.imp(fspath(erepo_dir), "foo", "foo_imported", rev="branch")
++    stage = dvc.imp(os.fspath(erepo_dir), "foo", "foo_imported", rev="branch")
+ 
+     assert (tmp_dir / "foo_imported").read_text() == "foo content"
+     assert scm.repo.git.check_ignore("foo_imported")
+     assert stage.deps[0].def_repo == {
+-        "url": fspath(erepo_dir),
++        "url": os.fspath(erepo_dir),
+         "rev": "branch",
+         "rev_lock": rev,
+     }
+@@ -182,7 +179,7 @@ def test_import_rev(tmp_dir, scm, dvc, erepo_dir):
+ def test_pull_imported_stage(tmp_dir, dvc, erepo_dir):
+     with erepo_dir.chdir():
+         erepo_dir.dvc_gen("foo", "foo content", commit="create foo")
+-    dvc.imp(fspath(erepo_dir), "foo", "foo_imported")
++    dvc.imp(os.fspath(erepo_dir), "foo", "foo_imported")
+ 
+     dst_stage = Dvcfile(dvc, "foo_imported.dvc").stage
+     dst_cache = dst_stage.outs[0].cache_path
+@@ -207,7 +204,7 @@ def test_cache_type_is_properly_overridden(tmp_dir, scm, dvc, erepo_dir):
+         erepo_dir.dvc_gen("foo", "foo content", "create foo")
+     assert System.is_symlink(erepo_dir / "foo")
+ 
+-    dvc.imp(fspath(erepo_dir), "foo", "foo_imported")
++    dvc.imp(os.fspath(erepo_dir), "foo", "foo_imported")
+ 
+     assert not System.is_symlink("foo_imported")
+     assert (tmp_dir / "foo_imported").read_text() == "foo content"
+@@ -218,7 +215,7 @@ def test_pull_imported_directory_stage(tmp_dir, dvc, erepo_dir):
+     with erepo_dir.chdir():
+         erepo_dir.dvc_gen({"dir": {"foo": "foo content"}}, commit="create dir")
+ 
+-    dvc.imp(fspath(erepo_dir), "dir", "dir_imported")
++    dvc.imp(os.fspath(erepo_dir), "dir", "dir_imported")
+ 
+     remove("dir_imported")
+     remove(dvc.cache.local.cache_dir)
+@@ -226,13 +223,13 @@ def test_pull_imported_directory_stage(tmp_dir, dvc, erepo_dir):
+     dvc.pull(["dir_imported.dvc"])
+ 
+     assert os.path.isdir("dir_imported")
+-    trees_equal(fspath(erepo_dir / "dir"), "dir_imported")
++    trees_equal(erepo_dir / "dir", "dir_imported")
+ 
+ 
+ def test_download_error_pulling_imported_stage(tmp_dir, dvc, erepo_dir):
+     with erepo_dir.chdir():
+         erepo_dir.dvc_gen("foo", "foo content", commit="create foo")
+-    dvc.imp(fspath(erepo_dir), "foo", "foo_imported")
++    dvc.imp(os.fspath(erepo_dir), "foo", "foo_imported")
+ 
+     dst_stage = Dvcfile(dvc, "foo_imported.dvc").stage
+     dst_cache = dst_stage.outs[0].cache_path
+@@ -253,7 +250,7 @@ def test_import_to_dir(dname, tmp_dir, dvc, erepo_dir):
+     with erepo_dir.chdir():
+         erepo_dir.dvc_gen("foo", "foo content", commit="create foo")
+ 
+-    stage = dvc.imp(fspath(erepo_dir), "foo", dname)
++    stage = dvc.imp(os.fspath(erepo_dir), "foo", dname)
+ 
+     dst = os.path.join(dname, "foo")
+ 
+@@ -269,12 +266,12 @@ def test_pull_non_workspace(tmp_dir, scm, dvc, erepo_dir):
+         with erepo_dir.branch("branch", new=True):
+             erepo_dir.dvc_gen("foo", "branch content", commit="modify foo")
+ 
+-    stage = dvc.imp(fspath(erepo_dir), "foo", "foo_imported", rev="branch")
++    stage = dvc.imp(os.fspath(erepo_dir), "foo", "foo_imported", rev="branch")
+     tmp_dir.scm_add([stage.relpath], commit="imported branch")
+     scm.tag("ref-to-branch")
+ 
+     # Overwrite via import
+-    dvc.imp(fspath(erepo_dir), "foo", "foo_imported", rev="master")
++    dvc.imp(os.fspath(erepo_dir), "foo", "foo_imported", rev="master")
+ 
+     remove(stage.outs[0].cache_path)
+     dvc.fetch(all_tags=True)
+@@ -283,18 +280,18 @@ def test_pull_non_workspace(tmp_dir, scm, dvc, erepo_dir):
+ 
+ def test_import_non_existing(erepo_dir, tmp_dir, dvc):
+     with pytest.raises(PathMissingError):
+-        tmp_dir.dvc.imp(fspath(erepo_dir), "invalid_output")
++        tmp_dir.dvc.imp(os.fspath(erepo_dir), "invalid_output")
+ 
+     # https://github.com/iterative/dvc/pull/2837#discussion_r352123053
+     with pytest.raises(PathMissingError):
+-        tmp_dir.dvc.imp(fspath(erepo_dir), "/root/", "root")
++        tmp_dir.dvc.imp(os.fspath(erepo_dir), "/root/", "root")
+ 
+ 
+ def test_pull_no_rev_lock(erepo_dir, tmp_dir, dvc):
+     with erepo_dir.chdir():
+         erepo_dir.dvc_gen("foo", "contents", commit="create foo")
+ 
+-    stage = dvc.imp(fspath(erepo_dir), "foo", "foo_imported")
++    stage = dvc.imp(os.fspath(erepo_dir), "foo", "foo_imported")
+     assert "rev" not in stage.deps[0].def_repo
+     stage.deps[0].def_repo.pop("rev_lock")
+ 
+@@ -309,36 +306,47 @@ def test_pull_no_rev_lock(erepo_dir, tmp_dir, dvc):
+     assert (tmp_dir / "foo_imported").read_text() == "contents"
+ 
+ 
+-def test_import_from_bare_git_repo(tmp_dir, make_tmp_dir, erepo_dir):
++def test_import_from_bare_git_repo(
++    tmp_dir, make_tmp_dir, erepo_dir, setup_remote
++):
+     import git
+ 
+-    git.Repo.init(fspath(tmp_dir), bare=True)
++    git.Repo.init(os.fspath(tmp_dir), bare=True)
+ 
++    setup_remote(erepo_dir.dvc)
+     with erepo_dir.chdir():
+         erepo_dir.dvc_gen({"foo": "foo"}, commit="initial")
+-        erepo_dir.dvc.push()
++    erepo_dir.dvc.push()
+ 
+-        erepo_dir.scm.repo.create_remote("origin", fspath(tmp_dir))
+-        erepo_dir.scm.repo.remote("origin").push("master")
++    erepo_dir.scm.repo.create_remote("origin", os.fspath(tmp_dir))
++    erepo_dir.scm.repo.remote("origin").push("master")
+ 
+     dvc_repo = make_tmp_dir("dvc-repo", scm=True, dvc=True)
+     with dvc_repo.chdir():
+-        dvc_repo.dvc.imp(fspath(tmp_dir), "foo")
++        dvc_repo.dvc.imp(os.fspath(tmp_dir), "foo")
+ 
+ 
+ def test_import_pipeline_tracked_outs(
+-    tmp_dir, dvc, scm, erepo_dir, local_remote, run_copy
++    tmp_dir, dvc, scm, erepo_dir, run_copy, setup_remote
+ ):
+     from dvc.dvcfile import PIPELINE_FILE, PIPELINE_LOCK
+ 
++    setup_remote(dvc)
+     tmp_dir.gen("foo", "foo")
+     run_copy("foo", "bar", name="copy-foo-bar")
++    dvc.push()
++
+     dvc.scm.add([PIPELINE_FILE, PIPELINE_LOCK])
+     dvc.scm.commit("add pipeline stage")
+-    dvc.push()
+ 
+     with erepo_dir.chdir():
+         erepo_dir.dvc.imp(
+-            "file:///{}".format(fspath(tmp_dir)), "bar", out="baz"
++            "file:///{}".format(os.fspath(tmp_dir)), "bar", out="baz"
+         )
+         assert (erepo_dir / "baz").read_text() == "foo"
++
++
++def test_local_import(tmp_dir, dvc, scm):
++    tmp_dir.dvc_gen("foo", "foo", commit="init")
++    (tmp_dir / "outdir").mkdir()
++    dvc.imp(".", "foo", out="outdir")
+diff --git a/tests/func/test_import_url.py b/tests/func/test_import_url.py
+index 206b24f26..0469be9bb 100644
+--- a/tests/func/test_import_url.py
++++ b/tests/func/test_import_url.py
+@@ -3,7 +3,6 @@ from uuid import uuid4
+ 
+ import pytest
+ 
+-from dvc.compat import fspath
+ from dvc.main import main
+ from dvc.stage import Stage
+ from dvc.utils.fs import makedirs
+@@ -44,7 +43,7 @@ def test_should_remove_outs_before_import(tmp_dir, dvc, mocker, erepo_dir):
+     erepo_dir.gen({"foo": "foo"})
+ 
+     remove_outs_call_counter = mocker.spy(Stage, "remove_outs")
+-    ret = main(["import-url", fspath(erepo_dir / "foo")])
++    ret = main(["import-url", os.fspath(erepo_dir / "foo")])
+ 
+     assert ret == 0
+     assert remove_outs_call_counter.mock.call_count == 1
+@@ -99,7 +98,7 @@ def test_import_stage_accompanies_target(tmp_dir, dvc, erepo_dir):
+         erepo_dir.dvc_gen("file1", "file1 content", commit="commit file")
+ 
+     tmp_dir.gen({"dir": {}})
+-    erepo = {"url": fspath(erepo_dir)}
++    erepo = {"url": os.fspath(erepo_dir)}
+     dvc.imp_url("file1", out=os.path.join("dir", "imported_file"), erepo=erepo)
+ 
+     assert (tmp_dir / "dir" / "imported_file").exists()
+diff --git a/tests/func/test_init.py b/tests/func/test_init.py
+index 211dfba3e..00fd8c90d 100644
+--- a/tests/func/test_init.py
++++ b/tests/func/test_init.py
+@@ -1,7 +1,6 @@
+ import logging
+ import os
+ 
+-from dvc.compat import fspath
+ from dvc.config import Config
+ from dvc.exceptions import InitError
+ from dvc.main import main
+@@ -64,7 +63,7 @@ def test_init_no_scm_cli(tmp_dir):
+ 
+     dvc_path = tmp_dir / DvcRepo.DVC_DIR
+     assert dvc_path.is_dir()
+-    assert Config(fspath(dvc_path))["core"]["no_scm"]
++    assert Config(os.fspath(dvc_path))["core"]["no_scm"]
+ 
+ 
+ def test_init_quiet_should_not_display_welcome_screen(tmp_dir, scm, caplog):
+@@ -83,8 +82,8 @@ def test_allow_init_dvc_subdir(tmp_dir, scm, monkeypatch):
+         assert main(["init", "--subdir"]) == 0
+ 
+     repo = DvcRepo("subdir")
+-    assert repo.root_dir == fspath(tmp_dir / "subdir")
+-    assert repo.scm.root_dir == fspath(tmp_dir)
++    assert repo.root_dir == os.fspath(tmp_dir / "subdir")
++    assert repo.scm.root_dir == os.fspath(tmp_dir)
+ 
+ 
+ def test_subdir_init_no_option(tmp_dir, scm, monkeypatch, caplog):
+@@ -100,5 +99,5 @@ def test_subdir_init_no_option(tmp_dir, scm, monkeypatch, caplog):
+         "{} is not tracked by any supported SCM tool (e.g. Git). "
+         "Use `--no-scm` if you don't want to use any SCM or "
+         "`--subdir` if initializing inside a subdirectory of a parent SCM "
+-        "repository.".format(fspath(tmp_dir / "subdir"))
++        "repository.".format(os.fspath(tmp_dir / "subdir"))
+     ) in caplog.text
+diff --git a/tests/func/test_install.py b/tests/func/test_install.py
+index f2ed61ab9..d71f26dcf 100644
+--- a/tests/func/test_install.py
++++ b/tests/func/test_install.py
+@@ -5,13 +5,13 @@ import sys
+ import pytest
+ 
+ from dvc.exceptions import GitHookAlreadyExistsError
+-from dvc.utils import file_md5, fspath
++from dvc.utils import file_md5
+ 
+ 
+ @pytest.mark.skipif(
+     sys.platform == "win32", reason="Git hooks aren't supported on Windows"
+ )
+-class TestInstall(object):
++class TestInstall:
+     def _hook(self, name):
+         return pathlib.Path(".git") / "hooks" / name
+ 
+@@ -52,7 +52,7 @@ class TestInstall(object):
+         storage_path = temp / "dvc_storage"
+ 
+         with dvc.config.edit() as conf:
+-            conf["remote"]["store"] = {"url": fspath(storage_path)}
++            conf["remote"]["store"] = {"url": os.fspath(storage_path)}
+             conf["core"]["remote"] = "store"
+         tmp_dir.dvc_gen("file", "file_content", "commit message")
+ 
+@@ -61,8 +61,8 @@ class TestInstall(object):
+             storage_path / file_checksum[:2] / file_checksum[2:]
+         )
+ 
+-        scm.repo.clone(fspath(git_remote))
+-        scm.repo.create_remote("origin", fspath(git_remote))
++        scm.repo.clone(os.fspath(git_remote))
++        scm.repo.create_remote("origin", os.fspath(git_remote))
+ 
+         assert not expected_storage_path.is_file()
+         scm.repo.git.push("origin", "master")
+diff --git a/tests/func/test_lockfile.py b/tests/func/test_lockfile.py
+index d22d5ca5c..caac97e5f 100644
+--- a/tests/func/test_lockfile.py
++++ b/tests/func/test_lockfile.py
+@@ -1,8 +1,6 @@
+ from collections import OrderedDict
+ from operator import itemgetter
+-from textwrap import dedent
+ 
+-import pytest
+ import yaml
+ 
+ from dvc.dvcfile import PIPELINE_LOCK
+@@ -20,32 +18,6 @@ FS_STRUCTURE = {
+ }
+ 
+ 
+-@pytest.fixture
+-def run_head(tmp_dir, dvc):
+-    """Output first line of each file to different file with '-1' appended."""
+-    tmp_dir.gen(
+-        "head.py",
+-        dedent(
+-            """
+-        import sys
+-        for file in sys.argv[1:]:
+-            with open(file) as f, open(file +"-1","w+") as w:
+-                w.write(f.readline())
+-        """
+-        ),
+-    )
+-
+-    def run(*args, **run_kwargs):
+-        return dvc.run(
+-            cmd="python head.py {}".format(" ".join(args)),
+-            outs=[dep + "-1" for dep in args],
+-            deps=args,
+-            **run_kwargs
+-        )
+-
+-    return run
+-
+-
+ def read_lock_file(file=PIPELINE_LOCK):
+     with open(file) as f:
+         data = parse_stage_for_update(f.read(), file)
+diff --git a/tests/func/test_ls.py b/tests/func/test_ls.py
+index bc1532320..aa8383cdd 100644
+--- a/tests/func/test_ls.py
++++ b/tests/func/test_ls.py
+@@ -3,7 +3,6 @@ import shutil
+ 
+ import pytest
+ 
+-from dvc.compat import fspath
+ from dvc.exceptions import PathMissingError
+ from dvc.repo import Repo
+ from dvc.scm.base import CloneError
+@@ -55,7 +54,7 @@ def test_ls_repo(tmp_dir, dvc, scm):
+     tmp_dir.scm_gen(FS_STRUCTURE, commit="init")
+     tmp_dir.dvc_gen(DVC_STRUCTURE, commit="dvc")
+ 
+-    files = Repo.ls(fspath(tmp_dir))
++    files = Repo.ls(os.fspath(tmp_dir))
+     match_files(
+         files,
+         (
+@@ -77,7 +76,7 @@ def test_ls_repo_with_color(tmp_dir, dvc, scm, mocker, monkeypatch, caplog):
+     tmp_dir.dvc_gen(DVC_STRUCTURE, commit="dvc")
+ 
+     monkeypatch.setenv("LS_COLORS", "rs=0:di=01;34:*.xml=01;31:*.dvc=01;33:")
+-    cli_args = parse_args(["list", fspath(tmp_dir)])
++    cli_args = parse_args(["list", os.fspath(tmp_dir)])
+     cmd = cli_args.func(cli_args)
+ 
+     caplog.clear()
+@@ -101,7 +100,7 @@ def test_ls_repo_recursive(tmp_dir, dvc, scm):
+     tmp_dir.scm_gen(FS_STRUCTURE, commit="init")
+     tmp_dir.dvc_gen(DVC_STRUCTURE, commit="dvc")
+ 
+-    files = Repo.ls(fspath(tmp_dir), recursive=True)
++    files = Repo.ls(os.fspath(tmp_dir), recursive=True)
+     match_files(
+         files,
+         (
+@@ -128,7 +127,7 @@ def test_ls_repo_outs_only_recursive(tmp_dir, dvc, scm):
+     tmp_dir.scm_gen(FS_STRUCTURE, commit="init")
+     tmp_dir.dvc_gen(DVC_STRUCTURE, commit="dvc")
+ 
+-    files = Repo.ls(fspath(tmp_dir), recursive=True, outs_only=True)
++    files = Repo.ls(os.fspath(tmp_dir), recursive=True, outs_only=True)
+     match_files(
+         files,
+         (
+@@ -144,7 +143,7 @@ def test_ls_repo_with_path_dir(tmp_dir, dvc, scm):
+     tmp_dir.scm_gen(FS_STRUCTURE, commit="init")
+     tmp_dir.dvc_gen(DVC_STRUCTURE, commit="dvc")
+ 
+-    files = Repo.ls(fspath(tmp_dir), path="model")
++    files = Repo.ls(os.fspath(tmp_dir), path="model")
+     match_files(
+         files,
+         (
+@@ -163,7 +162,7 @@ def test_ls_repo_with_path_dir_outs_only_empty(tmp_dir, dvc, scm):
+     tmp_dir.scm_gen({"folder/.keep": "content"}, commit="add .keep")
+ 
+     with pytest.raises(PathMissingError):
+-        Repo.ls(fspath(tmp_dir), path="folder", outs_only=True)
++        Repo.ls(os.fspath(tmp_dir), path="folder", outs_only=True)
+ 
+ 
+ def test_ls_repo_with_path_subdir(tmp_dir, dvc, scm):
+@@ -171,7 +170,7 @@ def test_ls_repo_with_path_subdir(tmp_dir, dvc, scm):
+     tmp_dir.dvc_gen(DVC_STRUCTURE, commit="dvc")
+ 
+     path = os.path.join("data", "subcontent")
+-    files = Repo.ls(fspath(tmp_dir), path)
++    files = Repo.ls(os.fspath(tmp_dir), path)
+     match_files(
+         files,
+         (
+@@ -188,7 +187,7 @@ def test_ls_repo_with_path_subdir_outs_only(tmp_dir, dvc, scm):
+     tmp_dir.dvc_gen(DVC_STRUCTURE, commit="dvc")
+ 
+     path = os.path.join("data", "subcontent")
+-    files = Repo.ls(fspath(tmp_dir), path, outs_only=True)
++    files = Repo.ls(os.fspath(tmp_dir), path, outs_only=True)
+     match_files(files, ((("data.xml",), True), (("statistics",), False),))
+ 
+ 
+@@ -197,7 +196,7 @@ def test_ls_repo_with_path_subdir_outs_only_recursive(tmp_dir, dvc, scm):
+     tmp_dir.dvc_gen(DVC_STRUCTURE, commit="dvc")
+ 
+     path = os.path.join("data", "subcontent")
+-    files = Repo.ls(fspath(tmp_dir), path, outs_only=True, recursive=True)
++    files = Repo.ls(os.fspath(tmp_dir), path, outs_only=True, recursive=True)
+     match_files(
+         files, ((("data.xml",), True), (("statistics", "data.csv"), True),)
+     )
+@@ -208,7 +207,7 @@ def test_ls_repo_with_path_file_out(tmp_dir, dvc, scm):
+     tmp_dir.dvc_gen(DVC_STRUCTURE, commit="dvc")
+ 
+     path = os.path.join("data", "subcontent", "data.xml")
+-    files = Repo.ls(fspath(tmp_dir), path)
++    files = Repo.ls(os.fspath(tmp_dir), path)
+     match_files(files, ((("data.xml",), True),))
+ 
+ 
+@@ -217,7 +216,7 @@ def test_ls_repo_with_file_path_fs(tmp_dir, dvc, scm):
+     tmp_dir.dvc_gen(DVC_STRUCTURE, commit="dvc")
+ 
+     path = "README.md"
+-    files = Repo.ls(fspath(tmp_dir), path, recursive=True)
++    files = Repo.ls(os.fspath(tmp_dir), path, recursive=True)
+     match_files(files, ((("README.md",), False),))
+ 
+ 
+@@ -226,7 +225,7 @@ def test_ls_repo_with_missed_path(tmp_dir, dvc, scm):
+     tmp_dir.dvc_gen(DVC_STRUCTURE, commit="dvc")
+ 
+     with pytest.raises(PathMissingError) as exc_info:
+-        Repo.ls(fspath(tmp_dir), path="missed_path")
++        Repo.ls(os.fspath(tmp_dir), path="missed_path")
+     assert not exc_info.value.output_only
+ 
+ 
+@@ -236,7 +235,7 @@ def test_ls_repo_with_missed_path_outs_only(tmp_dir, dvc, scm):
+ 
+     with pytest.raises(PathMissingError) as exc_info:
+         Repo.ls(
+-            fspath(tmp_dir),
++            os.fspath(tmp_dir),
+             path="missed_path",
+             recursive=True,
+             outs_only=True,
+@@ -247,7 +246,7 @@ def test_ls_repo_with_missed_path_outs_only(tmp_dir, dvc, scm):
+ def test_ls_repo_with_removed_dvc_dir(tmp_dir, dvc, scm):
+     create_dvc_pipeline(tmp_dir, dvc)
+ 
+-    files = Repo.ls(fspath(tmp_dir))
++    files = Repo.ls(os.fspath(tmp_dir))
+     match_files(
+         files,
+         (
+@@ -264,7 +263,7 @@ def test_ls_repo_with_removed_dvc_dir(tmp_dir, dvc, scm):
+ def test_ls_repo_with_removed_dvc_dir_recursive(tmp_dir, dvc, scm):
+     create_dvc_pipeline(tmp_dir, dvc)
+ 
+-    files = Repo.ls(fspath(tmp_dir), recursive=True)
++    files = Repo.ls(os.fspath(tmp_dir), recursive=True)
+     match_files(
+         files,
+         (
+@@ -282,7 +281,7 @@ def test_ls_repo_with_removed_dvc_dir_with_path_dir(tmp_dir, dvc, scm):
+     create_dvc_pipeline(tmp_dir, dvc)
+ 
+     path = "out"
+-    files = Repo.ls(fspath(tmp_dir), path)
++    files = Repo.ls(os.fspath(tmp_dir), path)
+     match_files(files, ((("file",), True),))
+ 
+ 
+@@ -290,7 +289,7 @@ def test_ls_repo_with_removed_dvc_dir_with_path_file(tmp_dir, dvc, scm):
+     create_dvc_pipeline(tmp_dir, dvc)
+ 
+     path = os.path.join("out", "file")
+-    files = Repo.ls(fspath(tmp_dir), path)
++    files = Repo.ls(os.fspath(tmp_dir), path)
+     match_files(files, ((("file",), True),))
+ 
+ 
+@@ -299,7 +298,7 @@ def test_ls_remote_repo(erepo_dir):
+         erepo_dir.scm_gen(FS_STRUCTURE, commit="init")
+         erepo_dir.dvc_gen(DVC_STRUCTURE, commit="dvc")
+ 
+-    url = "file://{}".format(erepo_dir)
++    url = f"file://{erepo_dir}"
+     files = Repo.ls(url)
+     match_files(
+         files,
+@@ -319,7 +318,7 @@ def test_ls_remote_repo_recursive(erepo_dir):
+         erepo_dir.scm_gen(FS_STRUCTURE, commit="init")
+         erepo_dir.dvc_gen(DVC_STRUCTURE, commit="dvc")
+ 
+-    url = "file://{}".format(erepo_dir)
++    url = f"file://{erepo_dir}"
+     files = Repo.ls(url, recursive=True)
+     match_files(
+         files,
+@@ -347,7 +346,7 @@ def test_ls_remote_git_only_repo_recursive(git_dir):
+     with git_dir.chdir():
+         git_dir.scm_gen(FS_STRUCTURE, commit="init")
+ 
+-    url = "file://{}".format(git_dir)
++    url = f"file://{git_dir}"
+     files = Repo.ls(url, recursive=True)
+     match_files(
+         files,
+@@ -365,7 +364,7 @@ def test_ls_remote_repo_with_path_dir(erepo_dir):
+         erepo_dir.scm_gen(FS_STRUCTURE, commit="init")
+         erepo_dir.dvc_gen(DVC_STRUCTURE, commit="dvc")
+ 
+-    url = "file://{}".format(erepo_dir)
++    url = f"file://{erepo_dir}"
+     path = "model"
+     files = Repo.ls(url, path)
+     match_files(
+@@ -386,7 +385,7 @@ def test_ls_remote_repo_with_rev(erepo_dir):
+         erepo_dir.dvc_gen(DVC_STRUCTURE, commit="dvc")
+ 
+     rev = erepo_dir.scm.list_all_commits()[1]
+-    url = "file://{}".format(erepo_dir)
++    url = f"file://{erepo_dir}"
+     files = Repo.ls(url, rev=rev)
+     match_files(
+         files,
+@@ -404,7 +403,7 @@ def test_ls_remote_repo_with_rev_recursive(erepo_dir):
+         erepo_dir.scm_gen(FS_STRUCTURE, commit="init")
+ 
+     rev = erepo_dir.scm.list_all_commits()[1]
+-    url = "file://{}".format(erepo_dir)
++    url = f"file://{erepo_dir}"
+     files = Repo.ls(url, rev=rev, recursive=True)
+     match_files(
+         files,
+diff --git a/tests/func/test_move.py b/tests/func/test_move.py
+index c8ce7a3c2..53c8b920d 100644
+--- a/tests/func/test_move.py
++++ b/tests/func/test_move.py
+@@ -140,7 +140,7 @@ class TestMoveDirectoryShouldNotOverwriteExisting(TestDvcGit):
+         self.assertTrue(os.path.exists(dir_name))
+         self.assertEqual(
+             set(os.listdir(dir_name)),
+-            set([".gitignore", data_dir_stage, self.DATA_DIR]),
++            {".gitignore", data_dir_stage, self.DATA_DIR},
+         )
+ 
+         self.assertTrue(os.path.exists(new_dir_name))
+diff --git a/tests/func/test_pipeline.py b/tests/func/test_pipeline.py
+index d08f59bfe..765b45dfa 100644
+--- a/tests/func/test_pipeline.py
++++ b/tests/func/test_pipeline.py
+@@ -274,7 +274,7 @@ def test_split_pipeline(tmp_dir, scm, dvc):
+     )
+ 
+     command = CmdPipelineShow([])
+-    nodes, edges, is_tree = command._build_graph(
++    nodes, edges, _ = command._build_graph(
+         stage.path, commands=False, outs=True
+     )
+     assert set(nodes) == {"data", "data_train", "data_valid", "result"}
+@@ -319,11 +319,36 @@ def test_pipeline_ascii_multistage(tmp_dir, dvc, run_copy):
+     run_copy("foo", "bar", name="copy-foo-bar")
+     run_copy("bar", "foobar", single_stage=True)
+     command = CmdPipelineShow([])
+-    nodes, edges, is_tree = command._build_graph("foobar.dvc")
++    nodes, edges, _ = command._build_graph("foobar.dvc")
+     assert set(nodes) == {"dvc.yaml:copy-foo-bar", "foobar.dvc"}
+     assert set(edges) == {
+         ("foobar.dvc", "dvc.yaml:copy-foo-bar"),
+     }
+ 
+-    nodes, edges, is_tree = command._build_graph("dvc.yaml:copy-foo-bar")
++    nodes, *_ = command._build_graph("dvc.yaml:copy-foo-bar")
+     assert set(nodes) == {"dvc.yaml:copy-foo-bar"}
++
++
++def test_pipeline_multi_outputs_stages(dvc):
++    dvc.run(
++        outs=["alice", "bob"],
++        cmd="echo alice>alice && echo bob>bob",
++        single_stage=True,
++    )
++    dvc.run(
++        deps=["alice"],
++        outs=["mary", "mike"],
++        cmd="echo mary>mary && echo mike>mike",
++        single_stage=True,
++    )
++    stage = dvc.run(
++        deps=["mary"],
++        outs=["carol"],
++        cmd="echo carol>carol",
++        single_stage=True,
++    )
++
++    command = CmdPipelineShow([])
++    nodes, edges, _ = command._build_graph(stage.path, outs=True)
++    assert set(nodes) == {"alice", "mary", "carol"}
++    assert set(edges) == {("carol", "mary"), ("mary", "alice")}
+diff --git a/tests/func/test_remote.py b/tests/func/test_remote.py
+index 269feb8d2..d8217eda0 100644
+--- a/tests/func/test_remote.py
++++ b/tests/func/test_remote.py
+@@ -5,7 +5,6 @@ import configobj
+ import pytest
+ from mock import patch
+ 
+-from dvc.compat import fspath
+ from dvc.config import Config
+ from dvc.exceptions import DownloadError, UploadError
+ from dvc.main import main
+@@ -123,6 +122,7 @@ class TestRemoteDefault(TestDvc):
+ 
+ 
+ def test_show_default(dvc, capsys):
++    assert main(["remote", "add", "foo", "s3://bucket/name"]) == 0
+     assert main(["remote", "default", "foo"]) == 0
+     assert main(["remote", "default"]) == 0
+     out, _ = capsys.readouterr()
+@@ -172,10 +172,8 @@ def test_dir_checksum_should_be_key_order_agnostic(tmp_dir, dvc):
+     assert checksum1 == checksum2
+ 
+ 
+-def test_partial_push_n_pull(tmp_dir, dvc, tmp_path_factory):
+-    url = fspath(tmp_path_factory.mktemp("upstream"))
+-    dvc.config["remote"]["upstream"] = {"url": url}
+-    dvc.config["core"]["remote"] = "upstream"
++def test_partial_push_n_pull(tmp_dir, dvc, tmp_path_factory, setup_remote):
++    setup_remote(dvc, name="upstream")
+ 
+     foo = tmp_dir.dvc_gen({"foo": "foo content"})[0].outs[0]
+     bar = tmp_dir.dvc_gen({"bar": "bar content"})[0].outs[0]
+@@ -211,11 +209,10 @@ def test_partial_push_n_pull(tmp_dir, dvc, tmp_path_factory):
+         assert download_error_info.value.amount == 3
+ 
+ 
+-def test_raise_on_too_many_open_files(tmp_dir, dvc, tmp_path_factory, mocker):
+-    storage = fspath(tmp_path_factory.mktemp("test_remote_base"))
+-    dvc.config["remote"]["local_remote"] = {"url": storage}
+-    dvc.config["core"]["remote"] = "local_remote"
+-
++def test_raise_on_too_many_open_files(
++    tmp_dir, dvc, tmp_path_factory, mocker, setup_remote
++):
++    setup_remote(dvc)
+     tmp_dir.dvc_gen({"file": "file content"})
+ 
+     mocker.patch.object(
+@@ -241,14 +238,11 @@ def test_external_dir_resource_on_no_cache(tmp_dir, dvc, tmp_path_factory):
+ 
+     dvc.cache.local = None
+     with pytest.raises(RemoteCacheRequiredError):
+-        dvc.run(deps=[fspath(external_dir)], single_stage=True)
+-
++        dvc.run(deps=[os.fspath(external_dir)], single_stage=True)
+ 
+-def test_push_order(tmp_dir, dvc, tmp_path_factory, mocker):
+-    url = fspath(tmp_path_factory.mktemp("upstream"))
+-    dvc.config["remote"]["upstream"] = {"url": url}
+-    dvc.config["core"]["remote"] = "upstream"
+ 
++def test_push_order(tmp_dir, dvc, tmp_path_factory, mocker, setup_remote):
++    setup_remote(dvc)
+     tmp_dir.dvc_gen({"foo": {"bar": "bar content"}})
+     tmp_dir.dvc_gen({"baz": "baz content"})
+ 
+@@ -271,4 +265,22 @@ def test_remote_modify_validation(dvc):
+         == 251
+     )
+     config = configobj.ConfigObj(dvc.config.files["repo"])
+-    assert unsupported_config not in config['remote "{}"'.format(remote_name)]
++    assert unsupported_config not in config[f'remote "{remote_name}"']
++
++
++def test_remote_modify_default(dvc):
++    remote_repo = "repo_level"
++    remote_local = "local_level"
++    wrong_name = "anything"
++    assert main(["remote", "add", remote_repo, "s3://bucket/repo"]) == 0
++    assert main(["remote", "add", remote_local, "s3://bucket/local"]) == 0
++
++    assert main(["remote", "default", wrong_name]) == 251
++    assert main(["remote", "default", remote_repo]) == 0
++    assert main(["remote", "default", "--local", remote_local]) == 0
++
++    repo_config = configobj.ConfigObj(dvc.config.files["repo"])
++    local_config = configobj.ConfigObj(dvc.config.files["local"])
++
++    assert repo_config["core"]["remote"] == remote_repo
++    assert local_config["core"]["remote"] == remote_local
+diff --git a/tests/func/test_repo.py b/tests/func/test_repo.py
+index 19f224248..5fc55c119 100644
+--- a/tests/func/test_repo.py
++++ b/tests/func/test_repo.py
+@@ -1,7 +1,6 @@
+ import os
+ 
+ from dvc.cache import Cache
+-from dvc.compat import fspath
+ from dvc.repo import Repo
+ from dvc.system import System
+ 
+@@ -54,16 +53,16 @@ def test_destroy(tmp_dir, dvc, run_copy):
+         "dir/subdir",
+         "dir/subdir/file",
+     ]:
+-        assert not System.is_symlink(fspath(tmp_dir / path))
++        assert not System.is_symlink(tmp_dir / path)
+ 
+ 
+ def test_collect(tmp_dir, scm, dvc, run_copy):
+     def collect_outs(*args, **kwargs):
+-        return set(
++        return {
+             str(out)
+             for stage in dvc.collect(*args, **kwargs)
+             for out in stage.outs
+-        )
++        }
+ 
+     tmp_dir.dvc_gen("foo", "foo")
+     run_copy("foo", "bar", single_stage=True)
+@@ -101,7 +100,7 @@ def test_collect(tmp_dir, scm, dvc, run_copy):
+ 
+ def test_stages(tmp_dir, dvc):
+     def stages():
+-        return set(stage.relpath for stage in Repo(fspath(tmp_dir)).stages)
++        return {stage.relpath for stage in Repo(os.fspath(tmp_dir)).stages}
+ 
+     tmp_dir.dvc_gen({"file": "a", "dir/file": "b", "dir/subdir/file": "c"})
+ 
+diff --git a/tests/func/test_repro.py b/tests/func/test_repro.py
+index 10652b14d..319af0dbe 100644
+--- a/tests/func/test_repro.py
++++ b/tests/func/test_repro.py
+@@ -17,7 +17,6 @@ from flaky.flaky_decorator import flaky
+ from google.cloud import storage as gc
+ from mock import patch
+ 
+-from dvc.compat import fspath
+ from dvc.dvcfile import DVC_FILE, Dvcfile
+ from dvc.exceptions import (
+     CyclicGraphError,
+@@ -75,7 +74,7 @@ class TestRepro(SingleStageRun, TestDvc):
+             fname=self.file1_stage,
+             outs=[self.file1],
+             deps=[self.FOO, self.CODE],
+-            cmd="python {} {} {}".format(self.CODE, self.FOO, self.file1),
++            cmd=f"python {self.CODE} {self.FOO} {self.file1}",
+             name="run1",
+         )
+ 
+@@ -94,14 +93,14 @@ class TestReproCyclicGraph(SingleStageRun, TestDvc):
+             deps=[self.FOO],
+             outs=["bar.txt"],
+             cmd="echo bar > bar.txt",
+-            name="copybarbar.txt",
++            name="copybarbar-txt",
+         )
+ 
+         self._run(
+             deps=["bar.txt"],
+             outs=["baz.txt"],
+             cmd="echo baz > baz.txt",
+-            name="copybazbaz.txt",
++            name="copybazbaz-txt",
+         )
+ 
+         stage_dump = {
+@@ -147,7 +146,7 @@ class TestReproWorkingDirectoryAsOutput(TestDvc):
+ 
+         output = os.path.join("..", "something")
+         stage_dump = {
+-            "cmd": "echo something > {}".format(output),
++            "cmd": f"echo something > {output}",
+             "outs": [{"path": output}],
+         }
+         dump_stage_file(faulty_stage_path, stage_dump)
+@@ -176,7 +175,7 @@ class TestReproWorkingDirectoryAsOutput(TestDvc):
+             fname=os.path.join(dir1, "b.dvc"),
+             wdir=dir1,
+             outs=[out_dir],  # ../a/nested
+-            cmd="mkdir {path}".format(path=out_dir),
++            cmd=f"mkdir {out_dir}",
+             single_stage=True,
+         )
+ 
+@@ -186,7 +185,7 @@ class TestReproWorkingDirectoryAsOutput(TestDvc):
+ 
+         output = os.path.join("..", "..", "something")
+         stage_dump = {
+-            "cmd": "echo something > {}".format(output),
++            "cmd": f"echo something > {output}",
+             "outs": [{"path": output}],
+         }
+         dump_stage_file(error_stage_path, stage_dump)
+@@ -241,7 +240,7 @@ class TestReproDepUnderDir(SingleStageRun, TestDvc):
+             fname=self.file1 + ".dvc",
+             outs=[self.file1],
+             deps=[self.DATA, self.CODE],
+-            cmd="python {} {} {}".format(self.CODE, self.DATA, self.file1),
++            cmd=f"python {self.CODE} {self.DATA} {self.file1}",
+             name="copy-data-file1",
+         )
+ 
+@@ -278,7 +277,7 @@ class TestReproDepDirWithOutputsUnderIt(SingleStageRun, TestDvc):
+             fname=file1_stage,
+             deps=[self.DATA_DIR],
+             outs=[file1],
+-            cmd="python {} {} {}".format(self.CODE, self.DATA, file1),
++            cmd=f"python {self.CODE} {self.DATA} {file1}",
+             name="copy-data-file1",
+         )
+         self.assertTrue(stage is not None)
+@@ -304,7 +303,7 @@ class TestReproNoDeps(TestRepro):
+         stage = self._run(
+             fname=stage_file,
+             outs=[out],
+-            cmd="python {}".format(code_file),
++            cmd=f"python {code_file}",
+             name="uuid",
+         )
+ 
+@@ -378,8 +377,8 @@ class TestReproDryNoExec(TestDvc):
+     def test(self):
+         deps = []
+         for d in range(3):
+-            idir = "idir{}".format(d)
+-            odir = "odir{}".format(d)
++            idir = f"idir{d}"
++            odir = f"odir{d}"
+ 
+             deps.append("-d")
+             deps.append(odir)
+@@ -423,7 +422,7 @@ class TestReproChangedDeepData(TestReproChangedData):
+             fname=self.file2 + ".dvc",
+             outs=[self.file2],
+             deps=[self.file1, self.CODE],
+-            cmd="python {} {} {}".format(self.CODE, self.file1, self.file2),
++            cmd=f"python {self.CODE} {self.file1} {self.file2}",
+             name="copy-file-file2",
+         )
+ 
+@@ -437,7 +436,7 @@ class TestReproChangedDeepData(TestReproChangedData):
+         self.assertEqual(len(stages), 3)
+ 
+ 
+-class TestReproIgnoreBuildCache(TestDvc):
++class TestReproForceDownstream(TestDvc):
+     def test(self):
+         stages = self.dvc.add(self.FOO)
+         self.assertEqual(len(stages), 1)
+@@ -450,7 +449,7 @@ class TestReproIgnoreBuildCache(TestDvc):
+         file1_stage = self.dvc.run(
+             outs=[file1],
+             deps=[self.FOO, code1],
+-            cmd="python {} {} {}".format(code1, self.FOO, file1),
++            cmd=f"python {code1} {self.FOO} {file1}",
+             single_stage=True,
+         )
+         self.assertTrue(file1_stage is not None)
+@@ -461,7 +460,7 @@ class TestReproIgnoreBuildCache(TestDvc):
+         file2_stage = self.dvc.run(
+             outs=[file2],
+             deps=[file1, code2],
+-            cmd="python {} {} {}".format(code2, file1, file2),
++            cmd=f"python {code2} {file1} {file2}",
+             single_stage=True,
+         )
+         self.assertTrue(file2_stage is not None)
+@@ -472,7 +471,7 @@ class TestReproIgnoreBuildCache(TestDvc):
+         file3_stage = self.dvc.run(
+             outs=[file3],
+             deps=[file2, code3],
+-            cmd="python {} {} {}".format(code3, file2, file3),
++            cmd=f"python {code3} {file2} {file3}",
+             single_stage=True,
+         )
+         self.assertTrue(file3_stage is not None)
+@@ -480,7 +479,7 @@ class TestReproIgnoreBuildCache(TestDvc):
+         with open(code2, "a") as fobj:
+             fobj.write("\n\n")
+ 
+-        stages = self.dvc.reproduce(file3_stage.path, ignore_build_cache=True)
++        stages = self.dvc.reproduce(file3_stage.path, force_downstream=True)
+         self.assertEqual(len(stages), 2)
+         self.assertEqual(stages[0].path, file2_stage.path)
+         self.assertEqual(stages[1].path, file3_stage.path)
+@@ -519,7 +518,7 @@ class TestReproPipelines(SingleStageRun, TestDvc):
+             fname=self.file1 + ".dvc",
+             outs=[self.file1],
+             deps=[self.FOO, self.CODE],
+-            cmd="python {} {} {}".format(self.CODE, self.FOO, self.file1),
++            cmd=f"python {self.CODE} {self.FOO} {self.file1}",
+             single_stage=True,
+         )
+ 
+@@ -528,7 +527,7 @@ class TestReproPipelines(SingleStageRun, TestDvc):
+             fname=self.file2 + ".dvc",
+             outs=[self.file2],
+             deps=[self.BAR, self.CODE],
+-            cmd="python {} {} {}".format(self.CODE, self.BAR, self.file2),
++            cmd=f"python {self.CODE} {self.BAR} {self.file2}",
+             name="copy-BAR-file2",
+         )
+ 
+@@ -550,7 +549,7 @@ class TestReproLocked(TestReproChangedData):
+             fname=file2 + ".dvc",
+             outs=[file2],
+             deps=[self.file1, self.CODE],
+-            cmd="python {} {} {}".format(self.CODE, self.file1, file2),
++            cmd=f"python {self.CODE} {self.file1} {file2}",
+             name="copy-file1-file2",
+         )
+ 
+@@ -591,7 +590,7 @@ class TestReproLockedCallback(SingleStageRun, TestDvc):
+         stage = self._run(
+             fname=file1_stage,
+             outs=[file1],
+-            cmd="python {} {} {}".format(self.CODE, self.FOO, file1),
++            cmd=f"python {self.CODE} {self.FOO} {file1}",
+             name="copy-FOO-file1",
+         )
+         self.assertTrue(stage is not None)
+@@ -638,7 +637,7 @@ class TestReproMetricsAddUnchanged(TestDvc):
+             fname=file1_stage,
+             outs_no_cache=[file1],
+             deps=[self.FOO, self.CODE],
+-            cmd="python {} {} {}".format(self.CODE, self.FOO, file1),
++            cmd=f"python {self.CODE} {self.FOO} {file1}",
+             single_stage=True,
+         )
+ 
+@@ -657,7 +656,7 @@ class TestReproMetricsAddUnchanged(TestDvc):
+ class TestReproPhony(TestReproChangedData):
+     def test(self):
+         stage = self._run(
+-            cmd="cat " + self.file1, deps=[self.file1], name="no_cmd?"
++            cmd="cat " + self.file1, deps=[self.file1], name="no_cmd"
+         )
+ 
+         self.swap_foo_with_bar()
+@@ -703,7 +702,7 @@ class TestReproChangedDir(SingleStageRun, TestDvc):
+         stage = self._run(
+             outs=[dir_name],
+             deps=[file_name, dir_code],
+-            cmd="python {}".format(dir_code),
++            cmd=f"python {dir_code}",
+             name="copy-in-dir",
+         )
+         target = self._get_stage_target(stage)
+@@ -732,7 +731,7 @@ class TestReproChangedDirData(SingleStageRun, TestDvc):
+         stage = self._run(
+             outs=[dir_name],
+             deps=[self.DATA_DIR, dir_code],
+-            cmd="python {} {} {}".format(dir_code, self.DATA_DIR, dir_name),
++            cmd=f"python {dir_code} {self.DATA_DIR} {dir_name}",
+             name="copy-dir",
+         )
+         target = self._get_stage_target(stage)
+@@ -802,14 +801,14 @@ class TestCmdReproChdir(TestDvc):
+                 "run",
+                 "--single-stage",
+                 "-f",
+-                "{}/Dvcfile".format(dname),
++                f"{dname}/Dvcfile",
+                 "-w",
+-                "{}".format(dname),
++                f"{dname}",
+                 "-d",
+                 self.FOO,
+                 "-o",
+                 self.BAR,
+-                "python {} {} {}".format(self.CODE, self.FOO, self.BAR),
++                f"python {self.CODE} {self.FOO} {self.BAR}",
+             ]
+         )
+         self.assertEqual(ret, 0)
+@@ -860,7 +859,9 @@ class TestReproExternalBase(SingleStageRun, TestDvc):
+             stage.outs[0], "checkout", wraps=stage.outs[0].checkout
+         )
+ 
+-        patch_run = patch.object(stage, "_run", wraps=stage._run)
++        from dvc.stage.run import cmd_run
++
++        patch_run = patch("dvc.stage.run.cmd_run", wraps=cmd_run)
+ 
+         with self.dvc.lock, self.dvc.state:
+             with patch_download as mock_download:
+@@ -877,9 +878,7 @@ class TestReproExternalBase(SingleStageRun, TestDvc):
+     @patch("dvc.prompt.confirm", return_value=True)
+     def test(self, mock_prompt):
+         if not self.should_test():
+-            raise SkipTest(
+-                "Test {} is disabled".format(self.__class__.__name__)
+-            )
++            raise SkipTest(f"Test {self.__class__.__name__} is disabled")
+ 
+         cache = (
+             self.scheme
+@@ -956,12 +955,12 @@ class TestReproExternalBase(SingleStageRun, TestDvc):
+ 
+         self.assertNotEqual(self.dvc.status(), {})
+ 
+-        self.dvc.update(import_stage.path)
++        self.dvc.update([import_stage.path])
+         self.assertTrue(os.path.exists("import"))
+         self.assertTrue(filecmp.cmp("import", self.BAR, shallow=False))
+         self.assertEqual(self.dvc.status([import_stage.path]), {})
+ 
+-        self.dvc.update(import_remote_stage.path)
++        self.dvc.update([import_remote_stage.path])
+         self.assertEqual(self.dvc.status([import_remote_stage.path]), {})
+ 
+         stages = self.dvc.reproduce(cmd_stage.addressing)
+@@ -990,7 +989,7 @@ class TestReproExternalS3(S3, TestReproExternalBase):
+         return TEST_AWS_REPO_BUCKET
+ 
+     def cmd(self, i, o):
+-        return "aws s3 cp {} {}".format(i, o)
++        return f"aws s3 cp {i} {o}"
+ 
+     def write(self, bucket, key, body):
+         s3 = boto3.client("s3")
+@@ -1007,7 +1006,7 @@ class TestReproExternalGS(GCP, TestReproExternalBase):
+         return TEST_GCP_REPO_BUCKET
+ 
+     def cmd(self, i, o):
+-        return "gsutil cp {} {}".format(i, o)
++        return f"gsutil cp {i} {o}"
+ 
+     def write(self, bucket, key, body):
+         client = gc.Client()
+@@ -1022,15 +1021,15 @@ class TestReproExternalHDFS(HDFS, TestReproExternalBase):
+ 
+     @property
+     def bucket(self):
+-        return "{}@127.0.0.1".format(getpass.getuser())
++        return f"{getpass.getuser()}@127.0.0.1"
+ 
+     def cmd(self, i, o):
+-        return "hadoop fs -cp {} {}".format(i, o)
++        return f"hadoop fs -cp {i} {o}"
+ 
+     def write(self, bucket, key, body):
+         url = self.scheme + "://" + bucket + "/" + key
+         p = Popen(
+-            "hadoop fs -rm -f {}".format(url),
++            f"hadoop fs -rm -f {url}",
+             shell=True,
+             executable=os.getenv("SHELL"),
+             stdin=PIPE,
+@@ -1084,14 +1083,14 @@ class TestReproExternalSSH(SSH, TestReproExternalBase):
+     def bucket(self):
+         if not self._dir:
+             self._dir = self.mkdtemp()
+-        return "{}@127.0.0.1:{}".format(getpass.getuser(), self._dir)
++        return f"{getpass.getuser()}@127.0.0.1:{self._dir}"
+ 
+     def cmd(self, i, o):
+         prefix = "ssh://"
+         assert i.startswith(prefix) and o.startswith(prefix)
+         i = i[len(prefix) :]
+         o = o[len(prefix) :]
+-        return "scp {} {}".format(i, o)
++        return f"scp {i} {o}"
+ 
+     def write(self, bucket, key, body):
+         path = posixpath.join(self._dir, key)
+@@ -1105,12 +1104,10 @@ class TestReproExternalSSH(SSH, TestReproExternalBase):
+         try:
+             sftp.stat(path)
+             sftp.remove(path)
+-        except IOError:
++        except OSError:
+             pass
+ 
+-        stdin, stdout, stderr = ssh.exec_command(
+-            "mkdir -p $(dirname {})".format(path)
+-        )
++        stdin, stdout, stderr = ssh.exec_command(f"mkdir -p $(dirname {path})")
+         self.assertEqual(stdout.channel.recv_exit_status(), 0)
+ 
+         with sftp.open(path, "w+") as fobj:
+@@ -1149,8 +1146,8 @@ class TestReproExternalLOCAL(Local, TestReproExternalBase):
+ 
+     def cmd(self, i, o):
+         if os.name == "nt":
+-            return "copy {} {}".format(i, o)
+-        return "cp {} {}".format(i, o)
++            return f"copy {i} {o}"
++        return f"cp {i} {o}"
+ 
+     def write(self, bucket, key, body):
+         path = os.path.join(bucket, key)
+@@ -1168,7 +1165,7 @@ class TestReproExternalHTTP(TestReproExternalBase):
+ 
+     @staticmethod
+     def get_remote(port):
+-        return "http://localhost:{}/".format(port)
++        return f"http://localhost:{port}/"
+ 
+     @property
+     def local_cache(self):
+@@ -1210,7 +1207,7 @@ class TestReproExternalHTTP(TestReproExternalBase):
+ 
+             run_dependency = urljoin(remote, self.BAR)
+             run_output = "remote_file"
+-            cmd = 'open("{}", "w+")'.format(run_output)
++            cmd = f'open("{run_output}", "w+")'
+ 
+             with open("create-output.py", "w") as fd:
+                 fd.write(cmd)
+@@ -1248,18 +1245,18 @@ class TestReproShell(TestDvc):
+         self.dvc.run(
+             fname=stage,
+             outs=[fname],
+-            cmd="echo $SHELL > {}".format(fname),
++            cmd=f"echo $SHELL > {fname}",
+             single_stage=True,
+         )
+ 
+-        with open(fname, "r") as fd:
++        with open(fname) as fd:
+             self.assertEqual(os.getenv("SHELL"), fd.read().strip())
+ 
+         os.unlink(fname)
+ 
+         self.dvc.reproduce(stage)
+ 
+-        with open(fname, "r") as fd:
++        with open(fname) as fd:
+             self.assertEqual(os.getenv("SHELL"), fd.read().strip())
+ 
+ 
+@@ -1385,7 +1382,7 @@ class TestShouldDisplayMetricsOnReproWithMetricsOption(TestDvc):
+                 "--single-stage",
+                 "-m",
+                 metrics_file,
+-                "echo {} >> {}".format(metrics_value, metrics_file),
++                f"echo {metrics_value} >> {metrics_file}",
+             ]
+         )
+         self.assertEqual(0, ret)
+@@ -1399,7 +1396,7 @@ class TestShouldDisplayMetricsOnReproWithMetricsOption(TestDvc):
+         )
+         self.assertEqual(0, ret)
+ 
+-        expected_metrics_display = "{}: {}".format(metrics_file, metrics_value)
++        expected_metrics_display = f"{metrics_file}: {metrics_value}"
+         self.assertIn(expected_metrics_display, self._caplog.text)
+ 
+ 
+@@ -1429,16 +1426,16 @@ def repro_dir(tmp_dir, dvc, run_copy):
+     stages = {}
+ 
+     origin_copy = tmp_dir / "origin_copy"
+-    stage = run_copy("origin_data", fspath(origin_copy), single_stage=True)
++    stage = run_copy("origin_data", os.fspath(origin_copy), single_stage=True)
+     assert stage is not None
+     assert origin_copy.read_text() == "origin data content"
+     stages["origin_copy"] = stage
+ 
+     origin_copy_2 = tmp_dir / "dir" / "origin_copy_2"
+     stage = run_copy(
+-        fspath(origin_copy),
+-        fspath(origin_copy_2),
+-        fname=fspath(origin_copy_2) + ".dvc",
++        os.fspath(origin_copy),
++        os.fspath(origin_copy_2),
++        fname=os.fspath(origin_copy_2) + ".dvc",
+         single_stage=True,
+     )
+     assert stage is not None
+@@ -1448,9 +1445,9 @@ def repro_dir(tmp_dir, dvc, run_copy):
+     dir_file_path = tmp_dir / "data_dir" / "dir_file"
+     dir_file_copy = tmp_dir / "dir" / "subdir" / "dir_file_copy"
+     stage = run_copy(
+-        fspath(dir_file_path),
+-        fspath(dir_file_copy),
+-        fname=fspath(dir_file_copy) + ".dvc",
++        os.fspath(dir_file_path),
++        os.fspath(dir_file_copy),
++        fname=os.fspath(dir_file_copy) + ".dvc",
+         single_stage=True,
+     )
+     assert stage is not None
+@@ -1459,8 +1456,8 @@ def repro_dir(tmp_dir, dvc, run_copy):
+ 
+     last_stage = tmp_dir / "dir" / DVC_FILE
+     stage = dvc.run(
+-        fname=fspath(last_stage),
+-        deps=[fspath(origin_copy_2), fspath(dir_file_copy)],
++        fname=os.fspath(last_stage),
++        deps=[os.fspath(origin_copy_2), os.fspath(dir_file_copy)],
+         single_stage=True,
+     )
+     assert stage is not None
+@@ -1468,11 +1465,11 @@ def repro_dir(tmp_dir, dvc, run_copy):
+ 
+     # Unrelated are to verify that reproducing `dir` will not trigger them too
+     assert (
+-        run_copy(fspath(origin_copy), "unrelated1", single_stage=True)
++        run_copy(os.fspath(origin_copy), "unrelated1", single_stage=True)
+         is not None
+     )
+     assert (
+-        run_copy(fspath(dir_file_path), "unrelated2", single_stage=True)
++        run_copy(os.fspath(dir_file_path), "unrelated2", single_stage=True)
+         is not None
+     )
+ 
+diff --git a/tests/func/test_repro_multistage.py b/tests/func/test_repro_multistage.py
+index e9fd3f3a9..63b3b8755 100644
+--- a/tests/func/test_repro_multistage.py
++++ b/tests/func/test_repro_multistage.py
+@@ -492,7 +492,7 @@ def test_cyclic_graph_error(tmp_dir, dvc, run_copy):
+     run_copy("bar", "baz", name="copy-bar-baz")
+     run_copy("baz", "foobar", name="copy-baz-foobar")
+ 
+-    with open(PIPELINE_FILE, "r") as f:
++    with open(PIPELINE_FILE) as f:
+         data = parse_stage(f.read(), PIPELINE_FILE)
+         data["stages"]["copy-baz-foo"] = {
+             "cmd": "echo baz > foo",
+diff --git a/tests/func/test_run_multistage.py b/tests/func/test_run_multistage.py
+index a84a38620..75cad0d8a 100644
+--- a/tests/func/test_run_multistage.py
++++ b/tests/func/test_run_multistage.py
+@@ -45,7 +45,7 @@ def test_run_multi_stage_repeat(tmp_dir, dvc, run_copy):
+     stages = list(Dvcfile(dvc, PIPELINE_FILE).stages.values())
+     assert len(stages) == 2
+     assert all(isinstance(stage, PipelineStage) for stage in stages)
+-    assert set(stage.name for stage in stages) == {
++    assert {stage.name for stage in stages} == {
+         "copy-foo-foo1",
+         "copy-foo1-foo2",
+     }
+@@ -115,28 +115,18 @@ def test_graph(tmp_dir, dvc):
+         dvc.run(deps=["baz"], outs=["foo"], cmd="echo baz > foo", name="3")
+ 
+ 
+-def test_run_dump_on_multistage(tmp_dir, dvc):
++def test_run_dump_on_multistage(tmp_dir, dvc, run_head):
+     from dvc.dvcfile import Dvcfile, PIPELINE_FILE
+ 
+-    tmp_dir.gen({"dir": {"foo": "foo", "bar": "bar"}})
+-    dvc.run(
+-        cmd="cp foo foo1",
+-        deps=["foo"],
+-        name="copy-foo-foo1",
+-        outs=["foo1"],
+-        wdir="dir",
+-    )
+-    data, _ = Dvcfile(dvc, PIPELINE_FILE)._load()
+-    assert data == {
+-        "stages": {
+-            "copy-foo-foo1": {
+-                "cmd": "cp foo foo1",
+-                "wdir": "dir",
+-                "deps": ["foo"],
+-                "outs": ["foo1"],
++    tmp_dir.gen(
++        {
++            "dir": {
++                "foo": "foo\nfoo",
++                "bar": "bar\nbar",
++                "foobar": "foobar\foobar",
+             }
+         }
+-    }
++    )
+ 
+     dvc.run(
+         cmd="cp foo foo2",
+@@ -146,24 +136,56 @@ def test_run_dump_on_multistage(tmp_dir, dvc):
+         outs_persist=["foo2"],
+         always_changed=True,
+     )
+-    assert Dvcfile(dvc, PIPELINE_FILE)._load()[0] == {
++    data = Dvcfile(dvc, PIPELINE_FILE)._load()[0]
++    assert data == {
+         "stages": {
+             "copy-foo-foo2": {
+                 "cmd": "cp foo foo2",
+                 "deps": ["foo"],
+-                "outs_persist": ["foo2"],
++                "outs": [{"foo2": {"persist": True}}],
+                 "always_changed": True,
+                 "wdir": "dir",
+             },
++        }
++    }
++
++    run_head(
++        "foo",
++        "bar",
++        "foobar",
++        name="head-files",
++        outs=["bar-1"],
++        outs_persist=["foo-1"],
++        metrics_no_cache=["foobar-1"],
++        wdir="dir",
++    )
++    assert Dvcfile(dvc, PIPELINE_FILE)._load()[0] == {
++        "stages": {
++            "head-files": {
++                "cmd": "python {} foo bar foobar".format(
++                    (tmp_dir / "head.py").resolve()
++                ),
++                "wdir": "dir",
++                "deps": ["bar", "foo", "foobar"],
++                "outs": ["bar-1", {"foo-1": {"persist": True}}],
++                "metrics": [{"foobar-1": {"cache": False}}],
++            },
+             **data["stages"],
+         }
+     }
+ 
+ 
+-def test_run_with_invalid_stage_name(tmp_dir, dvc, run_copy):
+-    tmp_dir.dvc_gen("foo", "foo")
++@pytest.mark.parametrize(
++    "char", ["@:", "#", "$", ":", "/", "\\", ".", ";", ","]
++)
++def test_run_with_invalid_stage_name(run_copy, char):
+     with pytest.raises(InvalidStageName):
+-        run_copy("foo", "bar", name="email@https://dvc.org")
++        run_copy("foo", "bar", name=f"copy_name-{char}")
++
++
++def test_run_with_name_having_hyphen_underscore(tmp_dir, dvc, run_copy):
++    tmp_dir.dvc_gen("foo", "foo")
++    run_copy("foo", "bar", name="copy-foo_bar")
+ 
+ 
+ def test_run_already_exists(tmp_dir, dvc, run_copy):
+diff --git a/tests/func/test_run_single_stage.py b/tests/func/test_run_single_stage.py
+index 88a7479c9..2e7956281 100644
+--- a/tests/func/test_run_single_stage.py
++++ b/tests/func/test_run_single_stage.py
+@@ -110,7 +110,7 @@ class TestRunNoExec(TestDvcGit):
+             single_stage=True,
+         )
+         self.assertFalse(os.path.exists("out"))
+-        with open(".gitignore", "r") as fobj:
++        with open(".gitignore") as fobj:
+             self.assertEqual(fobj.read(), "/out\n")
+ 
+ 
+@@ -233,7 +233,7 @@ class TestRunBadCwd(TestDvc):
+ 
+     def test_same_prefix(self):
+         with self.assertRaises(StagePathOutsideError):
+-            path = "{}-{}".format(self._root_dir, uuid.uuid4())
++            path = f"{self._root_dir}-{uuid.uuid4()}"
+             os.mkdir(path)
+             self.dvc.run(cmd="", wdir=path, single_stage=True)
+ 
+@@ -245,7 +245,7 @@ class TestRunBadWdir(TestDvc):
+ 
+     def test_same_prefix(self):
+         with self.assertRaises(StagePathOutsideError):
+-            path = "{}-{}".format(self._root_dir, uuid.uuid4())
++            path = f"{self._root_dir}-{uuid.uuid4()}"
+             os.mkdir(path)
+             self.dvc.run(cmd="", wdir=path, single_stage=True)
+ 
+@@ -276,7 +276,7 @@ class TestRunBadName(TestDvc):
+ 
+     def test_same_prefix(self):
+         with self.assertRaises(StagePathOutsideError):
+-            path = "{}-{}".format(self._root_dir, uuid.uuid4())
++            path = f"{self._root_dir}-{uuid.uuid4()}"
+             os.mkdir(path)
+             self.dvc.run(
+                 cmd="",
+@@ -306,7 +306,7 @@ class TestRunRemoveOuts(TestDvc):
+         self.dvc.run(
+             deps=[self.CODE],
+             outs=[self.FOO],
+-            cmd="python {} {}".format(self.CODE, self.FOO),
++            cmd=f"python {self.CODE} {self.FOO}",
+             single_stage=True,
+         )
+ 
+@@ -336,14 +336,14 @@ class TestRunUnprotectOutsCopy(TestDvc):
+         )
+         self.assertEqual(ret, 0)
+         self.assertTrue(os.access(self.FOO, os.W_OK))
+-        with open(self.FOO, "r") as fd:
++        with open(self.FOO) as fd:
+             self.assertEqual(fd.read(), "foo")
+ 
+         ret = main(
+             [
+                 "run",
+                 "--overwrite-dvcfile",
+-                "--ignore-build-cache",
++                "--no-run-cache",
+                 "--single-stage",
+                 "-d",
+                 self.CODE,
+@@ -356,7 +356,7 @@ class TestRunUnprotectOutsCopy(TestDvc):
+         )
+         self.assertEqual(ret, 0)
+         self.assertTrue(os.access(self.FOO, os.W_OK))
+-        with open(self.FOO, "r") as fd:
++        with open(self.FOO) as fd:
+             self.assertEqual(fd.read(), "foo")
+ 
+ 
+@@ -394,14 +394,14 @@ class TestRunUnprotectOutsSymlink(TestDvc):
+             self.assertFalse(os.access(self.FOO, os.W_OK))
+ 
+         self.assertTrue(System.is_symlink(self.FOO))
+-        with open(self.FOO, "r") as fd:
++        with open(self.FOO) as fd:
+             self.assertEqual(fd.read(), "foo")
+ 
+         ret = main(
+             [
+                 "run",
+                 "--overwrite-dvcfile",
+-                "--ignore-build-cache",
++                "--no-run-cache",
+                 "--single-stage",
+                 "-d",
+                 self.CODE,
+@@ -421,7 +421,7 @@ class TestRunUnprotectOutsSymlink(TestDvc):
+             self.assertFalse(os.access(self.FOO, os.W_OK))
+ 
+         self.assertTrue(System.is_symlink(self.FOO))
+-        with open(self.FOO, "r") as fd:
++        with open(self.FOO) as fd:
+             self.assertEqual(fd.read(), "foo")
+ 
+ 
+@@ -453,14 +453,14 @@ class TestRunUnprotectOutsHardlink(TestDvc):
+         self.assertEqual(ret, 0)
+         self.assertFalse(os.access(self.FOO, os.W_OK))
+         self.assertTrue(System.is_hardlink(self.FOO))
+-        with open(self.FOO, "r") as fd:
++        with open(self.FOO) as fd:
+             self.assertEqual(fd.read(), "foo")
+ 
+         ret = main(
+             [
+                 "run",
+                 "--overwrite-dvcfile",
+-                "--ignore-build-cache",
++                "--no-run-cache",
+                 "--single-stage",
+                 "-d",
+                 self.CODE,
+@@ -474,7 +474,7 @@ class TestRunUnprotectOutsHardlink(TestDvc):
+         self.assertEqual(ret, 0)
+         self.assertFalse(os.access(self.FOO, os.W_OK))
+         self.assertTrue(System.is_hardlink(self.FOO))
+-        with open(self.FOO, "r") as fd:
++        with open(self.FOO) as fd:
+             self.assertEqual(fd.read(), "foo")
+ 
+ 
+@@ -545,7 +545,7 @@ class TestCmdRunOverwrite(TestDvc):
+                 "-d",
+                 self.CODE,
+                 "--overwrite-dvcfile",
+-                "--ignore-build-cache",
++                "--no-run-cache",
+                 "--single-stage",
+                 "-o",
+                 "out",
+@@ -594,7 +594,7 @@ class TestCmdRunCliMetrics(TestDvc):
+             ]
+         )
+         self.assertEqual(ret, 0)
+-        with open("metrics.txt", "r") as fd:
++        with open("metrics.txt") as fd:
+             self.assertEqual(fd.read().rstrip(), "test")
+ 
+     def test_not_cached(self):
+@@ -608,14 +608,14 @@ class TestCmdRunCliMetrics(TestDvc):
+             ]
+         )
+         self.assertEqual(ret, 0)
+-        with open("metrics.txt", "r") as fd:
++        with open("metrics.txt") as fd:
+             self.assertEqual(fd.read().rstrip(), "test")
+ 
+ 
+ class TestCmdRunWorkingDirectory(TestDvc):
+     def test_default_wdir_is_not_written(self):
+         stage = self.dvc.run(
+-            cmd="echo test > {}".format(self.FOO),
++            cmd=f"echo test > {self.FOO}",
+             outs=[self.FOO],
+             wdir=".",
+             single_stage=True,
+@@ -624,9 +624,7 @@ class TestCmdRunWorkingDirectory(TestDvc):
+         self.assertNotIn(Stage.PARAM_WDIR, d.keys())
+ 
+         stage = self.dvc.run(
+-            cmd="echo test > {}".format(self.BAR),
+-            outs=[self.BAR],
+-            single_stage=True,
++            cmd=f"echo test > {self.BAR}", outs=[self.BAR], single_stage=True,
+         )
+         d = load_stage_file(stage.relpath)
+         self.assertNotIn(Stage.PARAM_WDIR, d.keys())
+@@ -637,7 +635,7 @@ class TestCmdRunWorkingDirectory(TestDvc):
+         foo = os.path.join(dname, self.FOO)
+         fname = os.path.join(dname, "stage" + DVC_FILE_SUFFIX)
+         stage = self.dvc.run(
+-            cmd="echo test > {}".format(foo),
++            cmd=f"echo test > {foo}",
+             outs=[foo],
+             fname=fname,
+             single_stage=True,
+@@ -664,8 +662,7 @@ def test_rerun_deterministic_ignore_cache(tmp_dir, run_copy):
+ 
+     assert run_copy("foo", "out", single_stage=True) is not None
+     assert (
+-        run_copy("foo", "out", ignore_build_cache=True, single_stage=True)
+-        is not None
++        run_copy("foo", "out", run_cache=False, single_stage=True) is not None
+     )
+ 
+ 
+@@ -762,7 +759,7 @@ class TestRunPersist(TestDvc):
+                 "--single-stage",
+                 self.outs_command,
+                 file,
+-                "echo {} >> {}".format(file_content, file),
++                f"echo {file_content} >> {file}",
+             ]
+         )
+         self.assertEqual(0, ret)
+@@ -777,7 +774,7 @@ class TestRunPersist(TestDvc):
+         ret = main(["repro", stage_file])
+         self.assertEqual(0, ret)
+ 
+-        with open(file, "r") as fobj:
++        with open(file) as fobj:
+             lines = fobj.readlines()
+         self.assertEqual(2, len(lines))
+ 
+@@ -814,7 +811,7 @@ class TestShouldRaiseOnOverlappingOutputPaths(TestDvc):
+         with self.assertRaises(OverlappingOutputPathsError) as err:
+             self.dvc.run(
+                 outs=[self.DATA],
+-                cmd="echo data >> {}".format(self.DATA),
++                cmd=f"echo data >> {self.DATA}",
+                 single_stage=True,
+             )
+         error_output = str(err.exception)
+@@ -824,12 +821,9 @@ class TestShouldRaiseOnOverlappingOutputPaths(TestDvc):
+ 
+         self.assertIn("Paths for outs:\n", error_output)
+         self.assertIn(
+-            "\n'{}'('{}')\n".format(self.DATA_DIR, data_dir_stage),
+-            error_output,
+-        )
+-        self.assertIn(
+-            "\n'{}'('{}')\n".format(self.DATA, data_stage), error_output
++            f"\n'{self.DATA_DIR}'('{data_dir_stage}')\n", error_output,
+         )
++        self.assertIn(f"\n'{self.DATA}'('{data_stage}')\n", error_output)
+         self.assertIn(
+             "\noverlap. To avoid unpredictable behaviour, rerun "
+             "command with non overlapping outs paths.",
+@@ -839,7 +833,7 @@ class TestShouldRaiseOnOverlappingOutputPaths(TestDvc):
+ 
+ class TestRerunWithSameOutputs(TestDvc):
+     def _read_content_only(self, path):
+-        with open(path, "r") as fobj:
++        with open(path) as fobj:
+             return [line.rstrip() for line in fobj]
+ 
+     @property
+@@ -853,7 +847,7 @@ class TestRerunWithSameOutputs(TestDvc):
+                 "--single-stage",
+                 "--outs",
+                 self.FOO,
+-                "echo {} > {}".format(self.FOO_CONTENTS, self.FOO),
++                f"echo {self.FOO_CONTENTS} > {self.FOO}",
+             ]
+         )
+         self.assertEqual(0, ret)
+@@ -868,7 +862,7 @@ class TestRerunWithSameOutputs(TestDvc):
+                 self.FOO,
+                 "--overwrite-dvcfile",
+                 "--single-stage",
+-                "echo {} >> {}".format(self.BAR_CONTENTS, self.FOO),
++                f"echo {self.BAR_CONTENTS} >> {self.FOO}",
+             ]
+         )
+         self.assertEqual(0, ret)
+@@ -908,7 +902,7 @@ class TestShouldNotCheckoutUponCorruptedLocalHardlinkCache(TestDvc):
+         self.dvc = DvcRepo(".")
+ 
+     def test(self):
+-        cmd = "python {} {} {}".format(self.CODE, self.FOO, self.BAR)
++        cmd = f"python {self.CODE} {self.FOO} {self.BAR}"
+         stage = self.dvc.run(
+             deps=[self.FOO], outs=[self.BAR], cmd=cmd, single_stage=True
+         )
+@@ -920,7 +914,9 @@ class TestShouldNotCheckoutUponCorruptedLocalHardlinkCache(TestDvc):
+         patch_checkout = mock.patch.object(
+             stage.outs[0], "checkout", wraps=stage.outs[0].checkout
+         )
+-        patch_run = mock.patch.object(stage, "_run", wraps=stage._run)
++        from dvc.stage.run import cmd_run
++
++        patch_run = mock.patch("dvc.stage.run.cmd_run", wraps=cmd_run)
+ 
+         with self.dvc.lock, self.dvc.state:
+             with patch_checkout as mock_checkout:
+@@ -932,7 +928,7 @@ class TestShouldNotCheckoutUponCorruptedLocalHardlinkCache(TestDvc):
+ 
+ 
+ class TestPersistentOutput(TestDvc):
+-    def test_ignore_build_cache(self):
++    def test_ignore_run_cache(self):
+         warning = "Build cache is ignored when persisting outputs."
+ 
+         with open("immutable", "w") as fobj:
+@@ -958,7 +954,7 @@ class TestPersistentOutput(TestDvc):
+ 
+         # Even if the "immutable" dependency didn't change
+         # it should run the command again, as it is "ignoring build cache"
+-        with open("greetings", "r") as fobj:
++        with open("greetings") as fobj:
+             assert "hello\nhello\n" == fobj.read()
+ 
+ 
+diff --git a/tests/func/test_scm.py b/tests/func/test_scm.py
+index 5501c88a5..97530ac74 100644
+--- a/tests/func/test_scm.py
++++ b/tests/func/test_scm.py
+@@ -3,7 +3,6 @@ import os
+ import pytest
+ from git import Repo
+ 
+-from dvc.compat import fspath
+ from dvc.scm import SCM, Git, NoSCM
+ from dvc.scm.base import SCMError
+ from dvc.system import System
+@@ -12,26 +11,26 @@ from tests.utils import get_gitignore_content
+ 
+ 
+ def test_init_none(tmp_dir):
+-    assert isinstance(SCM(fspath(tmp_dir), no_scm=True), NoSCM)
++    assert isinstance(SCM(os.fspath(tmp_dir), no_scm=True), NoSCM)
+ 
+ 
+ def test_init_git(tmp_dir):
+-    Repo.init(fspath(tmp_dir))
+-    assert isinstance(SCM(fspath(tmp_dir)), Git)
++    Repo.init(os.fspath(tmp_dir))
++    assert isinstance(SCM(os.fspath(tmp_dir)), Git)
+ 
+ 
+ def test_init_no_git(tmp_dir):
+     with pytest.raises(SCMError):
+-        SCM(fspath(tmp_dir))
++        SCM(os.fspath(tmp_dir))
+ 
+ 
+ def test_init_sub_dir(tmp_dir):
+-    Repo.init(fspath(tmp_dir))
++    Repo.init(os.fspath(tmp_dir))
+     subdir = tmp_dir / "dir"
+     subdir.mkdir()
+ 
+-    scm = SCM(fspath(subdir))
+-    assert scm.root_dir == fspath(tmp_dir)
++    scm = SCM(os.fspath(subdir))
++    assert scm.root_dir == os.fspath(tmp_dir)
+ 
+ 
+ class TestSCMGit(TestGit):
+@@ -74,7 +73,7 @@ def _count_gitignore_entries(line):
+ 
+ 
+ def test_ignore(tmp_dir, scm):
+-    foo = fspath(tmp_dir / "foo")
++    foo = os.fspath(tmp_dir / "foo")
+     target = "/foo"
+ 
+     scm.ignore(foo)
+@@ -93,54 +92,54 @@ def test_ignored(tmp_dir, scm):
+     tmp_dir.gen({"dir1": {"file1.jpg": "cont", "file2.txt": "cont"}})
+     tmp_dir.gen({".gitignore": "dir1/*.jpg"})
+ 
+-    assert scm._ignored(fspath(tmp_dir / "dir1" / "file1.jpg"))
+-    assert not scm._ignored(fspath(tmp_dir / "dir1" / "file2.txt"))
++    assert scm._ignored(os.fspath(tmp_dir / "dir1" / "file1.jpg"))
++    assert not scm._ignored(os.fspath(tmp_dir / "dir1" / "file2.txt"))
+ 
+ 
+ def test_get_gitignore(tmp_dir, scm):
+     tmp_dir.gen({"file1": "contents", "dir": {}})
+ 
+-    data_dir = fspath(tmp_dir / "file1")
++    data_dir = os.fspath(tmp_dir / "file1")
+     entry, gitignore = scm._get_gitignore(data_dir)
+     assert entry == "/file1"
+-    assert gitignore == fspath(tmp_dir / ".gitignore")
++    assert gitignore == os.fspath(tmp_dir / ".gitignore")
+ 
+-    data_dir = fspath(tmp_dir / "dir")
++    data_dir = os.fspath(tmp_dir / "dir")
+     entry, gitignore = scm._get_gitignore(data_dir)
+ 
+     assert entry == "/dir"
+-    assert gitignore == fspath(tmp_dir / ".gitignore")
++    assert gitignore == os.fspath(tmp_dir / ".gitignore")
+ 
+ 
+ def test_get_gitignore_symlink(tmp_dir, scm):
+     tmp_dir.gen({"dir": {"subdir": {"data": "contents"}}})
+-    link = fspath(tmp_dir / "link")
+-    target = fspath(tmp_dir / "dir" / "subdir" / "data")
++    link = os.fspath(tmp_dir / "link")
++    target = os.fspath(tmp_dir / "dir" / "subdir" / "data")
+     System.symlink(target, link)
+     entry, gitignore = scm._get_gitignore(link)
+     assert entry == "/link"
+-    assert gitignore == fspath(tmp_dir / ".gitignore")
++    assert gitignore == os.fspath(tmp_dir / ".gitignore")
+ 
+ 
+ def test_get_gitignore_subdir(tmp_dir, scm):
+     tmp_dir.gen({"dir1": {"file1": "cont", "dir2": {}}})
+ 
+-    data_dir = fspath(tmp_dir / "dir1" / "file1")
++    data_dir = os.fspath(tmp_dir / "dir1" / "file1")
+     entry, gitignore = scm._get_gitignore(data_dir)
+     assert entry == "/file1"
+-    assert gitignore == fspath(tmp_dir / "dir1" / ".gitignore")
++    assert gitignore == os.fspath(tmp_dir / "dir1" / ".gitignore")
+ 
+-    data_dir = fspath(tmp_dir / "dir1" / "dir2")
++    data_dir = os.fspath(tmp_dir / "dir1" / "dir2")
+     entry, gitignore = scm._get_gitignore(data_dir)
+     assert entry == "/dir2"
+-    assert gitignore == fspath(tmp_dir / "dir1" / ".gitignore")
++    assert gitignore == os.fspath(tmp_dir / "dir1" / ".gitignore")
+ 
+ 
+ def test_gitignore_should_end_with_newline(tmp_dir, scm):
+     tmp_dir.gen({"foo": "foo", "bar": "bar"})
+ 
+-    foo = fspath(tmp_dir / "foo")
+-    bar = fspath(tmp_dir / "bar")
++    foo = os.fspath(tmp_dir / "foo")
++    bar = os.fspath(tmp_dir / "bar")
+     gitignore = tmp_dir / ".gitignore"
+ 
+     scm.ignore(foo)
+@@ -153,7 +152,7 @@ def test_gitignore_should_end_with_newline(tmp_dir, scm):
+ def test_gitignore_should_append_newline_to_gitignore(tmp_dir, scm):
+     tmp_dir.gen({"foo": "foo", "bar": "bar"})
+ 
+-    bar_path = fspath(tmp_dir / "bar")
++    bar_path = os.fspath(tmp_dir / "bar")
+     gitignore = tmp_dir / ".gitignore"
+ 
+     gitignore.write_text("/foo")
+diff --git a/tests/func/test_stage.py b/tests/func/test_stage.py
+index ee9266f6d..284fe3b48 100644
+--- a/tests/func/test_stage.py
++++ b/tests/func/test_stage.py
+@@ -94,7 +94,7 @@ class TestReload(TestDvc):
+ class TestDefaultWorkingDirectory(TestDvc):
+     def test_ignored_in_checksum(self):
+         stage = self.dvc.run(
+-            cmd="echo test > {}".format(self.FOO),
++            cmd=f"echo test > {self.FOO}",
+             deps=[self.BAR],
+             outs=[self.FOO],
+             single_stage=True,
+@@ -128,7 +128,7 @@ class TestExternalRemoteResolution(TestDvc):
+                     "--single-stage",
+                     "-O",
+                     "remote://storage/file",
+-                    "echo file > {path}".format(path=file_path),
++                    f"echo file > {file_path}",
+                 ]
+             )
+             == 0
+@@ -160,7 +160,7 @@ def test_md5_ignores_comments(tmp_dir, dvc):
+         f.write("# End comment\n")
+ 
+     new_stage = SingleStageFile(dvc, stage.path).stage
+-    assert not new_stage.stage_changed()
++    assert not new_stage.changed_stage()
+ 
+ 
+ def test_meta_is_preserved(tmp_dir, dvc):
+diff --git a/tests/func/test_status.py b/tests/func/test_status.py
+index fdaa37b73..e94934f19 100644
+--- a/tests/func/test_status.py
++++ b/tests/func/test_status.py
+@@ -2,7 +2,6 @@ import os
+ 
+ from mock import patch
+ 
+-from dvc.compat import fspath
+ from dvc.main import main
+ from tests.basic_env import TestDvc
+ 
+@@ -30,7 +29,7 @@ def test_status_non_dvc_repo_import(tmp_dir, dvc, git_dir):
+     with git_dir.branch("branch", new=True):
+         git_dir.scm_gen("file", "first version", commit="first version")
+ 
+-    dvc.imp(fspath(git_dir), "file", "file", rev="branch")
++    dvc.imp(os.fspath(git_dir), "file", "file", rev="branch")
+ 
+     assert dvc.status(["file.dvc"]) == {}
+ 
+@@ -39,7 +38,7 @@ def test_status_non_dvc_repo_import(tmp_dir, dvc, git_dir):
+ 
+     (status,) = dvc.status(["file.dvc"])["file.dvc"]
+     assert status == {
+-        "changed deps": {"file ({})".format(git_dir): "update available"}
++        "changed deps": {f"file ({git_dir})": "update available"}
+     }
+ 
+ 
+@@ -47,7 +46,7 @@ def test_status_before_and_after_dvc_init(tmp_dir, dvc, git_dir):
+     git_dir.scm_gen("file", "first version", commit="first verison")
+     old_rev = git_dir.scm.get_rev()
+ 
+-    dvc.imp(fspath(git_dir), "file", "file")
++    dvc.imp(os.fspath(git_dir), "file", "file")
+ 
+     assert dvc.status(["file.dvc"]) == {}
+ 
+@@ -63,7 +62,7 @@ def test_status_before_and_after_dvc_init(tmp_dir, dvc, git_dir):
+     (status,) = dvc.status(["file.dvc"])["file.dvc"]
+     assert status == {
+         "changed deps": {
+-            "file ({})".format(fspath(git_dir)): "update available"
++            "file ({})".format(os.fspath(git_dir)): "update available"
+         }
+     }
+ 
+diff --git a/tests/func/test_tree.py b/tests/func/test_tree.py
+index 18748985e..813929105 100644
+--- a/tests/func/test_tree.py
++++ b/tests/func/test_tree.py
+@@ -1,5 +1,3 @@
+-# encoding: utf-8
+-
+ from os.path import join
+ 
+ from dvc.ignore import CleanTree
+@@ -36,7 +34,7 @@ class TestWorkingTree(TestDir):
+         self.assertFalse(self.tree.isfile("not-existing-file"))
+ 
+ 
+-class GitTreeTests(object):
++class GitTreeTests:
+     def test_open(self):
+         self.scm.add([self.FOO, self.UNICODE, self.DATA_DIR])
+         self.scm.commit("add")
+@@ -90,7 +88,7 @@ class TestGitSubmoduleTree(TestGitSubmodule, GitTreeTests):
+         self._pushd(self._root_dir)
+ 
+ 
+-class AssertWalkEqualMixin(object):
++class AssertWalkEqualMixin:
+     def assertWalkEqual(self, actual, expected, msg=None):
+         def convert_to_sets(walk_results):
+             return [
+diff --git a/tests/func/test_update.py b/tests/func/test_update.py
+index 2da66f347..529176fb4 100644
+--- a/tests/func/test_update.py
++++ b/tests/func/test_update.py
+@@ -2,7 +2,6 @@ import os
+ 
+ import pytest
+ 
+-from dvc.compat import fspath, fspath_py35
+ from dvc.dvcfile import Dvcfile
+ 
+ 
+@@ -14,7 +13,7 @@ def test_update_import(tmp_dir, dvc, erepo_dir, cached):
+         gen("version", "branch", "add version file")
+         old_rev = erepo_dir.scm.get_rev()
+ 
+-    stage = dvc.imp(fspath(erepo_dir), "version", "version", rev="branch")
++    stage = dvc.imp(os.fspath(erepo_dir), "version", "version", rev="branch")
+ 
+     assert (tmp_dir / "version").read_text() == "branch"
+     assert stage.deps[0].def_repo["rev_lock"] == old_rev
+@@ -26,7 +25,7 @@ def test_update_import(tmp_dir, dvc, erepo_dir, cached):
+ 
+     assert old_rev != new_rev
+ 
+-    dvc.update(stage.path)
++    dvc.update([stage.path])
+     assert (tmp_dir / "version").read_text() == "updated"
+ 
+     stage = Dvcfile(dvc, stage.path).stage
+@@ -39,13 +38,13 @@ def test_update_import_after_remote_updates_to_dvc(tmp_dir, dvc, erepo_dir):
+         erepo_dir.scm_gen("version", "branch", commit="add version file")
+         old_rev = erepo_dir.scm.get_rev()
+ 
+-    stage = dvc.imp(fspath(erepo_dir), "version", "version", rev="branch")
++    stage = dvc.imp(os.fspath(erepo_dir), "version", "version", rev="branch")
+ 
+     imported = tmp_dir / "version"
+     assert imported.is_file()
+     assert imported.read_text() == "branch"
+     assert stage.deps[0].def_repo == {
+-        "url": fspath(erepo_dir),
++        "url": os.fspath(erepo_dir),
+         "rev": "branch",
+         "rev_lock": old_rev,
+     }
+@@ -65,7 +64,7 @@ def test_update_import_after_remote_updates_to_dvc(tmp_dir, dvc, erepo_dir):
+     assert changed_dep[0].startswith("version ")
+     assert changed_dep[1] == "update available"
+ 
+-    dvc.update(stage.path)
++    dvc.update([stage.path])
+ 
+     assert dvc.status([stage.path]) == {}
+ 
+@@ -74,7 +73,7 @@ def test_update_import_after_remote_updates_to_dvc(tmp_dir, dvc, erepo_dir):
+ 
+     stage = Dvcfile(dvc, stage.path).stage
+     assert stage.deps[0].def_repo == {
+-        "url": fspath(erepo_dir),
++        "url": os.fspath(erepo_dir),
+         "rev": "branch",
+         "rev_lock": new_rev,
+     }
+@@ -85,7 +84,7 @@ def test_update_before_and_after_dvc_init(tmp_dir, dvc, git_dir):
+         git_dir.scm_gen("file", "first version", commit="first version")
+         old_rev = git_dir.scm.get_rev()
+ 
+-    stage = dvc.imp(fspath(git_dir), "file", "file")
++    stage = dvc.imp(os.fspath(git_dir), "file", "file")
+ 
+     with git_dir.chdir():
+         git_dir.init(dvc=True)
+@@ -100,13 +99,13 @@ def test_update_before_and_after_dvc_init(tmp_dir, dvc, git_dir):
+         "file.dvc": [
+             {
+                 "changed deps": {
+-                    "file ({})".format(fspath(git_dir)): "update available"
++                    "file ({})".format(os.fspath(git_dir)): "update available"
+                 }
+             }
+         ]
+     }
+ 
+-    dvc.update(stage.path)
++    dvc.update([stage.path])
+ 
+     assert (tmp_dir / "file").read_text() == "second version"
+     assert dvc.status([stage.path]) == {}
+@@ -118,7 +117,7 @@ def test_update_import_url(tmp_dir, dvc, tmp_path_factory):
+     src.write_text("file content")
+ 
+     dst = tmp_dir / "imported_file"
+-    stage = dvc.imp_url(fspath(src), fspath(dst))
++    stage = dvc.imp_url(os.fspath(src), os.fspath(dst))
+ 
+     assert dst.is_file()
+     assert dst.read_text() == "file content"
+@@ -127,7 +126,7 @@ def test_update_import_url(tmp_dir, dvc, tmp_path_factory):
+     src.write_text("updated file content")
+ 
+     assert dvc.status([stage.path]) == {}
+-    dvc.update(stage.path)
++    dvc.update([stage.path])
+     assert dvc.status([stage.path]) == {}
+ 
+     assert dst.is_file()
+@@ -138,7 +137,7 @@ def test_update_rev(tmp_dir, dvc, scm, git_dir):
+     with git_dir.chdir():
+         git_dir.scm_gen({"foo": "foo"}, commit="first")
+ 
+-    dvc.imp(fspath(git_dir), "foo")
++    dvc.imp(os.fspath(git_dir), "foo")
+     assert (tmp_dir / "foo.dvc").exists()
+ 
+     with git_dir.chdir(), git_dir.branch("branch1", new=True):
+@@ -149,20 +148,80 @@ def test_update_rev(tmp_dir, dvc, scm, git_dir):
+         git_dir.scm_gen({"foo": "foobar foo"}, commit="branch2 commit")
+         branch2_head = git_dir.scm.get_rev()
+ 
+-    stage = dvc.update("foo.dvc", rev="branch1")
++    stage = dvc.update(["foo.dvc"], rev="branch1")[0]
+     assert stage.deps[0].def_repo == {
+-        "url": fspath(git_dir),
++        "url": os.fspath(git_dir),
+         "rev": "branch1",
+         "rev_lock": branch1_head,
+     }
+-    with open(fspath_py35(tmp_dir / "foo")) as f:
++    with open(tmp_dir / "foo") as f:
+         assert "foobar" == f.read()
+ 
+-    stage = dvc.update("foo.dvc", rev="branch2")
++    stage = dvc.update(["foo.dvc"], rev="branch2")[0]
+     assert stage.deps[0].def_repo == {
+-        "url": fspath(git_dir),
++        "url": os.fspath(git_dir),
+         "rev": "branch2",
+         "rev_lock": branch2_head,
+     }
+-    with open(fspath_py35(tmp_dir / "foo")) as f:
++    with open(tmp_dir / "foo") as f:
+         assert "foobar foo" == f.read()
++
++
++def test_update_recursive(tmp_dir, dvc, erepo_dir):
++    with erepo_dir.branch("branch", new=True), erepo_dir.chdir():
++        erepo_dir.scm_gen(
++            {"foo1": "text1", "foo2": "text2", "foo3": "text3"},
++            commit="add foo files",
++        )
++        old_rev = erepo_dir.scm.get_rev()
++
++    tmp_dir.gen({"dir": {"subdir": {}}})
++    stage1 = dvc.imp(
++        os.fspath(erepo_dir),
++        "foo1",
++        os.path.join("dir", "foo1"),
++        rev="branch",
++    )
++    stage2 = dvc.imp(
++        os.fspath(erepo_dir),
++        "foo2",
++        os.path.join("dir", "subdir", "foo2"),
++        rev="branch",
++    )
++    stage3 = dvc.imp(
++        os.fspath(erepo_dir),
++        "foo3",
++        os.path.join("dir", "subdir", "foo3"),
++        rev="branch",
++    )
++
++    assert (tmp_dir / os.path.join("dir", "foo1")).read_text() == "text1"
++    assert (
++        tmp_dir / os.path.join("dir", "subdir", "foo2")
++    ).read_text() == "text2"
++    assert (
++        tmp_dir / os.path.join("dir", "subdir", "foo3")
++    ).read_text() == "text3"
++
++    assert stage1.deps[0].def_repo["rev_lock"] == old_rev
++    assert stage2.deps[0].def_repo["rev_lock"] == old_rev
++    assert stage3.deps[0].def_repo["rev_lock"] == old_rev
++
++    with erepo_dir.branch("branch", new=False), erepo_dir.chdir():
++        erepo_dir.scm_gen(
++            {"foo1": "updated1", "foo2": "updated2", "foo3": "updated3"},
++            "",
++            "update foo content",
++        )
++        new_rev = erepo_dir.scm.get_rev()
++
++    assert old_rev != new_rev
++
++    dvc.update(["dir"], recursive=True)
++
++    stage1 = Dvcfile(dvc, stage1.path).stage
++    stage2 = Dvcfile(dvc, stage2.path).stage
++    stage3 = Dvcfile(dvc, stage3.path).stage
++    assert stage1.deps[0].def_repo["rev_lock"] == new_rev
++    assert stage2.deps[0].def_repo["rev_lock"] == new_rev
++    assert stage3.deps[0].def_repo["rev_lock"] == new_rev
+diff --git a/tests/func/test_utils.py b/tests/func/test_utils.py
+index 996b2ce2f..b3478e650 100644
+--- a/tests/func/test_utils.py
++++ b/tests/func/test_utils.py
+@@ -1,5 +1,3 @@
+-# encoding: utf-8
+-
+ from dvc import utils
+ 
+ 
+diff --git a/tests/remotes.py b/tests/remotes.py
+index 3dd3eace7..91d1edb11 100644
+--- a/tests/remotes.py
++++ b/tests/remotes.py
+@@ -180,11 +180,11 @@ class OSS:
+ 
+     @staticmethod
+     def get_storagepath():
+-        return "{}/{}".format(TEST_OSS_REPO_BUCKET, (uuid.uuid4()))
++        return f"{TEST_OSS_REPO_BUCKET}/{uuid.uuid4()}"
+ 
+     @staticmethod
+     def get_url():
+-        return "oss://{}".format(OSS.get_storagepath())
++        return f"oss://{OSS.get_storagepath()}"
+ 
+ 
+ class SSH:
+@@ -200,7 +200,7 @@ class SSH:
+ 
+         try:
+             check_output(["ssh", "-o", "BatchMode=yes", "127.0.0.1", "ls"])
+-        except (CalledProcessError, IOError):
++        except (CalledProcessError, OSError):
+             return False
+ 
+         return True
+@@ -233,7 +233,7 @@ class SSHMocked:
+             drive, path = os.path.splitdrive(path)
+             assert drive.lower() == "c:"
+             path = path.replace("\\", "/")
+-        url = "ssh://{}@127.0.0.1:{}{}".format(user, port, path)
++        url = f"ssh://{user}@127.0.0.1:{port}{path}"
+         return url
+ 
+ 
+@@ -249,7 +249,7 @@ class HDFS:
+                 shell=True,
+                 executable=os.getenv("SHELL"),
+             )
+-        except (CalledProcessError, IOError):
++        except (CalledProcessError, OSError):
+             return False
+ 
+         p = Popen(
+@@ -275,4 +275,4 @@ class HTTP:
+ 
+     @staticmethod
+     def get_url(port):
+-        return "http://127.0.0.1:{}".format(port)
++        return f"http://127.0.0.1:{port}"
+diff --git a/tests/unit/command/test_diff.py b/tests/unit/command/test_diff.py
+index 52d033582..c52837f7e 100644
+--- a/tests/unit/command/test_diff.py
++++ b/tests/unit/command/test_diff.py
+@@ -3,6 +3,7 @@ import logging
+ import os
+ 
+ from dvc.cli import parse_args
++from dvc.command.diff import _show_md
+ 
+ 
+ def test_default(mocker, caplog):
+@@ -110,3 +111,32 @@ def test_no_changes(mocker, caplog):
+     cmd = args.func(args)
+     assert 0 == cmd.run()
+     assert not info()
++
++
++def test_show_md_empty():
++    assert _show_md({}) == ("| Status   | Path   |\n" "|----------|--------|")
++
++
++def test_show_md():
++    diff = {
++        "deleted": [
++            {"path": "zoo", "hash": "22222"},
++            {"path": os.path.join("data", ""), "hash": "XXXXXXXX.dir"},
++            {"path": os.path.join("data", "foo"), "hash": "11111111"},
++            {"path": os.path.join("data", "bar"), "hash": "00000000"},
++        ],
++        "modified": [
++            {"path": "file", "hash": {"old": "AAAAAAAA", "new": "BBBBBBBB"}}
++        ],
++        "added": [{"path": "file", "hash": "00000000"}],
++    }
++    assert _show_md(diff) == (
++        "| Status   | Path     |\n"
++        "|----------|----------|\n"
++        "| added    | file     |\n"
++        "| deleted  | data{sep}    |\n"
++        "| deleted  | data{sep}bar |\n"
++        "| deleted  | data{sep}foo |\n"
++        "| deleted  | zoo      |\n"
++        "| modified | file     |"
++    ).format(sep=os.path.sep)
+diff --git a/tests/unit/command/test_metrics.py b/tests/unit/command/test_metrics.py
+index 9b1c5a266..cd4bb7c2a 100644
+--- a/tests/unit/command/test_metrics.py
++++ b/tests/unit/command/test_metrics.py
+@@ -1,3 +1,5 @@
++import textwrap
++
+ from dvc.cli import parse_args
+ from dvc.command.metrics import CmdMetricsDiff, CmdMetricsShow, _show_diff
+ 
+@@ -37,25 +39,30 @@ def test_metrics_diff(dvc, mocker):
+ def test_metrics_show_json_diff():
+     assert _show_diff(
+         {"metrics.json": {"a.b.c": {"old": 1, "new": 2, "diff": 3}}}
+-    ) == (
+-        "    Path       Metric   Value   Change\n"
+-        "metrics.json   a.b.c    2       3     "
++    ) == textwrap.dedent(
++        """\
++        Path          Metric    Value    Change
++        metrics.json  a.b.c     2        3"""
+     )
+ 
+ 
+ def test_metrics_show_raw_diff():
+-    assert _show_diff({"metrics": {"": {"old": "1", "new": "2"}}}) == (
+-        " Path     Metric   Value         Change      \n"
+-        "metrics            2       diff not supported"
++    assert _show_diff(
++        {"metrics": {"": {"old": "1", "new": "2"}}}
++    ) == textwrap.dedent(
++        """\
++        Path     Metric    Value    Change
++        metrics            2        diff not supported"""
+     )
+ 
+ 
+ def test_metrics_diff_no_diff():
+     assert _show_diff(
+         {"other.json": {"a.b.d": {"old": "old", "new": "new"}}}
+-    ) == (
+-        "   Path      Metric   Value         Change      \n"
+-        "other.json   a.b.d    new     diff not supported"
++    ) == textwrap.dedent(
++        """\
++        Path        Metric    Value    Change
++        other.json  a.b.d     new      diff not supported"""
+     )
+ 
+ 
+@@ -66,18 +73,20 @@ def test_metrics_diff_no_changes():
+ def test_metrics_diff_new_metric():
+     assert _show_diff(
+         {"other.json": {"a.b.d": {"old": None, "new": "new"}}}
+-    ) == (
+-        "   Path      Metric   Value         Change      \n"
+-        "other.json   a.b.d    new     diff not supported"
++    ) == textwrap.dedent(
++        """\
++        Path        Metric    Value    Change
++        other.json  a.b.d     new      diff not supported"""
+     )
+ 
+ 
+ def test_metrics_diff_deleted_metric():
+     assert _show_diff(
+         {"other.json": {"a.b.d": {"old": "old", "new": None}}}
+-    ) == (
+-        "   Path      Metric   Value         Change      \n"
+-        "other.json   a.b.d    None    diff not supported"
++    ) == textwrap.dedent(
++        """\
++        Path        Metric    Value    Change
++        other.json  a.b.d     None     diff not supported"""
+     )
+ 
+ 
+@@ -114,9 +123,10 @@ def test_metrics_show(dvc, mocker):
+ def test_metrics_diff_prec():
+     assert _show_diff(
+         {"other.json": {"a.b": {"old": 0.0042, "new": 0.0043, "diff": 0.0001}}}
+-    ) == (
+-        "   Path      Metric   Value    Change\n"
+-        "other.json   a.b      0.0043   0.0001"
++    ) == textwrap.dedent(
++        """\
++        Path        Metric    Value    Change
++        other.json  a.b       0.0043   0.0001"""
+     )
+ 
+ 
+@@ -129,9 +139,38 @@ def test_metrics_diff_sorted():
+                 "a.b.c": {"old": 1, "new": 2, "diff": 1},
+             }
+         }
+-    ) == (
+-        "    Path       Metric   Value   Change\n"
+-        "metrics.yaml   a.b.c    2       1     \n"
+-        "metrics.yaml   a.d.e    4       1     \n"
+-        "metrics.yaml   x.b      6       1     "
++    ) == textwrap.dedent(
++        """\
++        Path          Metric    Value    Change
++        metrics.yaml  a.b.c     2        1
++        metrics.yaml  a.d.e     4        1
++        metrics.yaml  x.b       6        1"""
++    )
++
++
++def test_metrics_diff_markdown_empty():
++    assert _show_diff({}, markdown=True) == textwrap.dedent(
++        """\
++        | Path   | Metric   | Value   | Change   |
++        |--------|----------|---------|----------|"""
++    )
++
++
++def test_metrics_diff_markdown():
++    assert _show_diff(
++        {
++            "metrics.yaml": {
++                "x.b": {"old": 5, "new": 6},
++                "a.d.e": {"old": 3, "new": 4, "diff": 1},
++                "a.b.c": {"old": 1, "new": 2, "diff": 1},
++            }
++        },
++        markdown=True,
++    ) == textwrap.dedent(
++        """\
++        | Path         | Metric   | Value   | Change             |
++        |--------------|----------|---------|--------------------|
++        | metrics.yaml | a.b.c    | 2       | 1                  |
++        | metrics.yaml | a.d.e    | 4       | 1                  |
++        | metrics.yaml | x.b      | 6       | diff not supported |"""
+     )
+diff --git a/tests/unit/command/test_params.py b/tests/unit/command/test_params.py
+index bb0b6f136..8ebfac5fd 100644
+--- a/tests/unit/command/test_params.py
++++ b/tests/unit/command/test_params.py
+@@ -1,4 +1,5 @@
+ import logging
++import textwrap
+ 
+ from dvc.cli import parse_args
+ from dvc.command.params import CmdParamsDiff, _show_diff
+@@ -21,25 +22,32 @@ def test_params_diff(dvc, mocker):
+ 
+ 
+ def test_params_diff_changed():
+-    assert _show_diff({"params.yaml": {"a.b.c": {"old": 1, "new": 2}}}) == (
+-        "   Path       Param   Old   New\n" "params.yaml   a.b.c   1     2  "
++    assert _show_diff(
++        {"params.yaml": {"a.b.c": {"old": 1, "new": 2}}}
++    ) == textwrap.dedent(
++        """\
++        Path         Param    Old    New
++        params.yaml  a.b.c    1      2"""
+     )
+ 
+ 
+ def test_params_diff_list():
+     assert _show_diff(
+         {"params.yaml": {"a.b.c": {"old": 1, "new": [2, 3]}}}
+-    ) == (
+-        "   Path       Param   Old    New  \n"
+-        "params.yaml   a.b.c   1     [2, 3]"
++    ) == textwrap.dedent(
++        """\
++        Path         Param    Old    New
++        params.yaml  a.b.c    1      [2, 3]"""
+     )
+ 
+ 
+ def test_params_diff_unchanged():
+     assert _show_diff(
+         {"params.yaml": {"a.b.d": {"old": "old", "new": "new"}}}
+-    ) == (
+-        "   Path       Param   Old   New\n" "params.yaml   a.b.d   old   new"
++    ) == textwrap.dedent(
++        """\
++        Path         Param    Old    New
++        params.yaml  a.b.d    old    new"""
+     )
+ 
+ 
+@@ -50,25 +58,30 @@ def test_params_diff_no_changes():
+ def test_params_diff_new():
+     assert _show_diff(
+         {"params.yaml": {"a.b.d": {"old": None, "new": "new"}}}
+-    ) == (
+-        "   Path       Param   Old    New\n" "params.yaml   a.b.d   None   new"
++    ) == textwrap.dedent(
++        """\
++        Path         Param    Old    New
++        params.yaml  a.b.d    None   new"""
+     )
+ 
+ 
+ def test_params_diff_deleted():
+     assert _show_diff(
+         {"params.yaml": {"a.b.d": {"old": "old", "new": None}}}
+-    ) == (
+-        "   Path       Param   Old   New \n" "params.yaml   a.b.d   old   None"
++    ) == textwrap.dedent(
++        """\
++        Path         Param    Old    New
++        params.yaml  a.b.d    old    None"""
+     )
+ 
+ 
+ def test_params_diff_prec():
+     assert _show_diff(
+         {"params.yaml": {"train.lr": {"old": 0.0042, "new": 0.0043}}}
+-    ) == (
+-        "   Path        Param      Old      New  \n"
+-        "params.yaml   train.lr   0.0042   0.0043"
++    ) == textwrap.dedent(
++        """\
++        Path         Param     Old     New
++        params.yaml  train.lr  0.0042  0.0043"""
+     )
+ 
+ 
+@@ -94,9 +107,38 @@ def test_params_diff_sorted():
+                 "a.b.c": {"old": 1, "new": 2},
+             }
+         }
+-    ) == (
+-        "   Path       Param   Old   New\n"
+-        "params.yaml   a.b.c   1     2  \n"
+-        "params.yaml   a.d.e   3     4  \n"
+-        "params.yaml   x.b     5     6  "
++    ) == textwrap.dedent(
++        """\
++        Path         Param    Old    New
++        params.yaml  a.b.c    1      2
++        params.yaml  a.d.e    3      4
++        params.yaml  x.b      5      6"""
++    )
++
++
++def test_params_diff_markdown_empty():
++    assert _show_diff({}, markdown=True) == textwrap.dedent(
++        """\
++        | Path   | Param   | Old   | New   |
++        |--------|---------|-------|-------|"""
++    )
++
++
++def test_params_diff_markdown():
++    assert _show_diff(
++        {
++            "params.yaml": {
++                "x.b": {"old": 5, "new": 6},
++                "a.d.e": {"old": None, "new": 4},
++                "a.b.c": {"old": 1, "new": None},
++            }
++        },
++        markdown=True,
++    ) == textwrap.dedent(
++        """\
++        | Path        | Param   | Old   | New   |
++        |-------------|---------|-------|-------|
++        | params.yaml | a.b.c   | 1     | None  |
++        | params.yaml | a.d.e   | None  | 4     |
++        | params.yaml | x.b     | 5     | 6     |"""
+     )
+diff --git a/tests/unit/command/test_plot.py b/tests/unit/command/test_plot.py
+deleted file mode 100644
+index 1a4d3fb4e..000000000
+--- a/tests/unit/command/test_plot.py
++++ /dev/null
+@@ -1,122 +0,0 @@
+-import pytest
+-
+-from dvc.cli import parse_args
+-from dvc.command.plot import CmdPlotDiff, CmdPlotShow
+-
+-
+-def test_metrics_diff(mocker):
+-    cli_args = parse_args(
+-        [
+-            "plot",
+-            "diff",
+-            "--file",
+-            "result.extension",
+-            "-t",
+-            "template",
+-            "-d",
+-            "datafile",
+-            "--select",
+-            "column1,column2",
+-            "--no-html",
+-            "--stdout",
+-            "-x",
+-            "x_field",
+-            "-y",
+-            "y_field",
+-            "--title",
+-            "my_title",
+-            "--xlab",
+-            "x_title",
+-            "--ylab",
+-            "y_title",
+-            "HEAD",
+-            "tag1",
+-            "tag2",
+-        ]
+-    )
+-    assert cli_args.func == CmdPlotDiff
+-
+-    cmd = cli_args.func(cli_args)
+-
+-    m = mocker.patch.object(cmd.repo, "plot", autospec=True)
+-    mocker.patch("builtins.open")
+-    mocker.patch("os.path.join")
+-
+-    assert cmd.run() == 0
+-
+-    m.assert_called_once_with(
+-        datafile="datafile",
+-        template="template",
+-        revisions=["HEAD", "tag1", "tag2"],
+-        fields={"column1", "column2"},
+-        path=None,
+-        embed=False,
+-        x_field="x_field",
+-        y_field="y_field",
+-        csv_header=True,
+-        title="my_title",
+-        x_title="x_title",
+-        y_title="y_title",
+-    )
+-
+-
+-def test_metrics_show(mocker):
+-    cli_args = parse_args(
+-        [
+-            "plot",
+-            "show",
+-            "-f",
+-            "result.extension",
+-            "-t",
+-            "template",
+-            "-s",
+-            "$.data",
+-            "--no-html",
+-            "--stdout",
+-            "--no-csv-header",
+-            "datafile",
+-        ]
+-    )
+-    assert cli_args.func == CmdPlotShow
+-
+-    cmd = cli_args.func(cli_args)
+-
+-    m = mocker.patch.object(cmd.repo, "plot", autospec=True)
+-    mocker.patch("builtins.open")
+-    mocker.patch("os.path.join")
+-
+-    assert cmd.run() == 0
+-
+-    m.assert_called_once_with(
+-        datafile="datafile",
+-        template="template",
+-        revisions=None,
+-        fields=None,
+-        path="$.data",
+-        embed=False,
+-        x_field=None,
+-        y_field=None,
+-        csv_header=False,
+-        title=None,
+-        x_title=None,
+-        y_title=None,
+-    )
+-
+-
+-@pytest.mark.parametrize(
+-    "arg_revisions,is_dirty,expected_revisions",
+-    [
+-        ([], False, ["workspace"]),
+-        ([], True, ["HEAD", "workspace"]),
+-        (["v1", "v2", "workspace"], False, ["v1", "v2", "workspace"]),
+-        (["v1", "v2", "workspace"], True, ["v1", "v2", "workspace"]),
+-    ],
+-)
+-def test_revisions(mocker, arg_revisions, is_dirty, expected_revisions):
+-    args = mocker.MagicMock()
+-
+-    cmd = CmdPlotDiff(args)
+-    mocker.patch.object(args, "revisions", arg_revisions)
+-    mocker.patch.object(cmd.repo.scm, "is_dirty", return_value=is_dirty)
+-
+-    assert cmd._revisions() == expected_revisions
+diff --git a/tests/unit/command/test_plots.py b/tests/unit/command/test_plots.py
+new file mode 100644
+index 000000000..405492eff
+--- /dev/null
++++ b/tests/unit/command/test_plots.py
+@@ -0,0 +1,105 @@
++from dvc.cli import parse_args
++from dvc.command.plots import CmdPlotsDiff, CmdPlotsShow
++
++
++def test_metrics_diff(dvc, mocker):
++    cli_args = parse_args(
++        [
++            "plots",
++            "diff",
++            "--out",
++            "result.extension",
++            "-t",
++            "template",
++            "--targets",
++            "datafile",
++            "--select",
++            "column1,column2",
++            "--show-json",
++            "-x",
++            "x_field",
++            "-y",
++            "y_field",
++            "--title",
++            "my_title",
++            "--xlab",
++            "x_title",
++            "--ylab",
++            "y_title",
++            "HEAD",
++            "tag1",
++            "tag2",
++        ]
++    )
++    assert cli_args.func == CmdPlotsDiff
++
++    cmd = cli_args.func(cli_args)
++    m = mocker.patch("dvc.repo.plots.diff.diff", return_value={})
++
++    assert cmd.run() == 0
++
++    m.assert_called_once_with(
++        cmd.repo,
++        targets=["datafile"],
++        template="template",
++        revs=["HEAD", "tag1", "tag2"],
++        fields={"column1", "column2"},
++        path=None,
++        x_field="x_field",
++        y_field="y_field",
++        csv_header=True,
++        title="my_title",
++        x_title="x_title",
++        y_title="y_title",
++    )
++
++
++def test_metrics_show(dvc, mocker):
++    cli_args = parse_args(
++        [
++            "plots",
++            "show",
++            "-o",
++            "result.extension",
++            "-t",
++            "template",
++            "-s",
++            "$.data",
++            "--show-json",
++            "--no-csv-header",
++            "datafile",
++        ]
++    )
++    assert cli_args.func == CmdPlotsShow
++
++    cmd = cli_args.func(cli_args)
++
++    m = mocker.patch("dvc.repo.plots.show.show", return_value={})
++
++    assert cmd.run() == 0
++
++    m.assert_called_once_with(
++        cmd.repo,
++        targets=["datafile"],
++        template="template",
++        fields=None,
++        path="$.data",
++        x_field=None,
++        y_field=None,
++        csv_header=False,
++        title=None,
++        x_title=None,
++        y_title=None,
++    )
++
++
++def test_plots_show_json(dvc, mocker, caplog):
++    cli_args = parse_args(
++        ["plots", "diff", "HEAD~10", "HEAD~1", "--show-json"]
++    )
++    cmd = cli_args.func(cli_args)
++    mocker.patch(
++        "dvc.repo.plots.diff.diff", return_value={"plots.csv": "plothtml"}
++    )
++    assert cmd.run() == 0
++    assert '{"plots.csv": "plothtml"}\n' in caplog.text
+diff --git a/tests/unit/command/test_repro.py b/tests/unit/command/test_repro.py
+index 1e20a04ce..d29c02766 100644
+--- a/tests/unit/command/test_repro.py
++++ b/tests/unit/command/test_repro.py
+@@ -7,12 +7,13 @@ default_arguments = {
+     "downstream": False,
+     "dry": False,
+     "force": False,
+-    "ignore_build_cache": False,
++    "run_cache": True,
+     "interactive": False,
+     "no_commit": False,
+     "pipeline": False,
+     "single_item": False,
+     "recursive": False,
++    "force_downstream": False,
+ }
+ 
+ 
+diff --git a/tests/unit/command/test_run.py b/tests/unit/command/test_run.py
+index e595b1db6..87695291a 100644
+--- a/tests/unit/command/test_run.py
++++ b/tests/unit/command/test_run.py
+@@ -18,13 +18,17 @@ def test_run(mocker, dvc):
+             "metrics",
+             "--metrics-no-cache",
+             "metrics-no-cache",
++            "--plots",
++            "plots",
++            "--plots-no-cache",
++            "plots-no-cache",
+             "--file",
+             "file",
+             "--wdir",
+             "wdir",
+             "--no-exec",
+             "--overwrite-dvcfile",
+-            "--ignore-build-cache",
++            "--no-run-cache",
+             "--no-commit",
+             "--outs-persist",
+             "outs-persist",
+@@ -51,6 +55,8 @@ def test_run(mocker, dvc):
+         outs_no_cache=["outs-no-cache"],
+         metrics=["metrics"],
+         metrics_no_cache=["metrics-no-cache"],
++        plots=["plots"],
++        plots_no_cache=["plots-no-cache"],
+         outs_persist=["outs-persist"],
+         outs_persist_no_cache=["outs-persist-no-cache"],
+         params=["file:param1,param2", "param3"],
+@@ -58,7 +64,7 @@ def test_run(mocker, dvc):
+         wdir="wdir",
+         no_exec=True,
+         overwrite=True,
+-        ignore_build_cache=True,
++        run_cache=False,
+         no_commit=True,
+         always_changed=True,
+         cmd="command",
+@@ -78,6 +84,8 @@ def test_run_args_from_cli(mocker, dvc):
+         outs_no_cache=[],
+         metrics=[],
+         metrics_no_cache=[],
++        plots=[],
++        plots_no_cache=[],
+         outs_persist=[],
+         outs_persist_no_cache=[],
+         params=[],
+@@ -85,7 +93,7 @@ def test_run_args_from_cli(mocker, dvc):
+         wdir=None,
+         no_exec=False,
+         overwrite=False,
+-        ignore_build_cache=False,
++        run_cache=True,
+         no_commit=False,
+         always_changed=False,
+         cmd="echo foo",
+@@ -105,6 +113,8 @@ def test_run_args_with_spaces(mocker, dvc):
+         outs_no_cache=[],
+         metrics=[],
+         metrics_no_cache=[],
++        plots=[],
++        plots_no_cache=[],
+         outs_persist=[],
+         outs_persist_no_cache=[],
+         params=[],
+@@ -112,7 +122,7 @@ def test_run_args_with_spaces(mocker, dvc):
+         wdir=None,
+         no_exec=False,
+         overwrite=False,
+-        ignore_build_cache=False,
++        run_cache=True,
+         no_commit=False,
+         always_changed=False,
+         cmd='echo "foo bar"',
+diff --git a/tests/unit/command/test_update.py b/tests/unit/command/test_update.py
+index ff8e77942..087ab4483 100644
+--- a/tests/unit/command/test_update.py
++++ b/tests/unit/command/test_update.py
+@@ -1,20 +1,17 @@
+-import pytest
+-
+ from dvc.cli import parse_args
+ from dvc.command.update import CmdUpdate
+ 
+ 
+-@pytest.mark.parametrize(
+-    "command,rev", [(["update"], None), (["update", "--rev", "REV"], "REV")]
+-)
+-def test_update(dvc, mocker, command, rev):
+-    targets = ["target1", "target2", "target3"]
+-    cli_args = parse_args(command + targets)
++def test_update(dvc, mocker):
++    cli_args = parse_args(
++        ["update", "target1", "target2", "--rev", "REV", "--recursive"]
++    )
+     assert cli_args.func == CmdUpdate
+     cmd = cli_args.func(cli_args)
+     m = mocker.patch("dvc.repo.Repo.update")
+ 
+     assert cmd.run() == 0
+ 
+-    calls = [mocker.call(target, rev) for target in targets]
+-    m.assert_has_calls(calls)
++    m.assert_called_once_with(
++        targets=["target1", "target2"], rev="REV", recursive=True,
++    )
+diff --git a/tests/unit/remote/ssh/test_connection.py b/tests/unit/remote/ssh/test_connection.py
+index 3e9e16cb4..abaaa2051 100644
+--- a/tests/unit/remote/ssh/test_connection.py
++++ b/tests/unit/remote/ssh/test_connection.py
+@@ -72,7 +72,7 @@ def test_walk(tmp_path, ssh):
+         dir_data_path,
+         subdir_data_path,
+     ]
+-    expected = set([entry.absolute().as_posix() for entry in entries])
++    expected = {entry.absolute().as_posix() for entry in entries}
+ 
+     paths = set()
+     for root, dirs, files in ssh.walk(root_path.absolute().as_posix()):
+diff --git a/tests/unit/remote/ssh/test_ssh.py b/tests/unit/remote/ssh/test_ssh.py
+index f88545281..037ebe197 100644
+--- a/tests/unit/remote/ssh/test_ssh.py
++++ b/tests/unit/remote/ssh/test_ssh.py
+@@ -17,14 +17,14 @@ def test_url(dvc):
+     path = "/path/to/dir"
+ 
+     # URL ssh://[user@]host.xz[:port]/path
+-    url = "ssh://{}@{}:{}{}".format(user, host, port, path)
++    url = f"ssh://{user}@{host}:{port}{path}"
+     config = {"url": url}
+ 
+     remote = SSHRemote(dvc, config)
+     assert remote.path_info == url
+ 
+     # SCP-like URL ssh://[user@]host.xz:/absolute/path
+-    url = "ssh://{}@{}:{}".format(user, host, path)
++    url = f"ssh://{user}@{host}:{path}"
+     config = {"url": url}
+ 
+     remote = SSHRemote(dvc, config)
+@@ -60,7 +60,7 @@ else:
+ )
+ @patch("os.path.exists", return_value=True)
+ @patch(
+-    "{}.open".format(builtin_module_name),
++    f"{builtin_module_name}.open",
+     new_callable=mock_open,
+     read_data=mock_ssh_config,
+ )
+@@ -90,7 +90,7 @@ def test_ssh_host_override_from_config(
+ )
+ @patch("os.path.exists", return_value=True)
+ @patch(
+-    "{}.open".format(builtin_module_name),
++    f"{builtin_module_name}.open",
+     new_callable=mock_open,
+     read_data=mock_ssh_config,
+ )
+@@ -115,7 +115,7 @@ def test_ssh_user(mock_file, mock_exists, dvc, config, expected_user):
+ )
+ @patch("os.path.exists", return_value=True)
+ @patch(
+-    "{}.open".format(builtin_module_name),
++    f"{builtin_module_name}.open",
+     new_callable=mock_open,
+     read_data=mock_ssh_config,
+ )
+@@ -150,7 +150,7 @@ def test_ssh_port(mock_file, mock_exists, dvc, config, expected_port):
+ )
+ @patch("os.path.exists", return_value=True)
+ @patch(
+-    "{}.open".format(builtin_module_name),
++    f"{builtin_module_name}.open",
+     new_callable=mock_open,
+     read_data=mock_ssh_config,
+ )
+@@ -172,7 +172,7 @@ def test_ssh_keyfile(mock_file, mock_exists, dvc, config, expected_keyfile):
+ )
+ @patch("os.path.exists", return_value=True)
+ @patch(
+-    "{}.open".format(builtin_module_name),
++    f"{builtin_module_name}.open",
+     new_callable=mock_open,
+     read_data=mock_ssh_config,
+ )
+diff --git a/tests/unit/remote/test_azure.py b/tests/unit/remote/test_azure.py
+index e404b2e6e..b3fa97948 100644
+--- a/tests/unit/remote/test_azure.py
++++ b/tests/unit/remote/test_azure.py
+@@ -23,7 +23,7 @@ def test_init_compat(dvc):
+ 
+ def test_init(dvc):
+     prefix = "some/prefix"
+-    url = "azure://{}/{}".format(container_name, prefix)
++    url = f"azure://{container_name}/{prefix}"
+     config = {"url": url, "connection_string": connection_string}
+     remote = AzureRemote(dvc, config)
+     assert remote.path_info == url
+diff --git a/tests/unit/remote/test_base.py b/tests/unit/remote/test_base.py
+index a5c89f018..1e07589df 100644
+--- a/tests/unit/remote/test_base.py
++++ b/tests/unit/remote/test_base.py
+@@ -7,7 +7,7 @@ from dvc.path_info import PathInfo
+ from dvc.remote.base import BaseRemote, RemoteCmdError, RemoteMissingDepsError
+ 
+ 
+-class _CallableOrNone(object):
++class _CallableOrNone:
+     """Helper for testing if object is callable() or None."""
+ 
+     def __eq__(self, other):
+@@ -111,11 +111,11 @@ def test_cache_checksums_traverse(path_to_checksum, cache_checksums, dvc):
+     list(remote._cache_checksums_traverse(size, {0}))
+     for i in range(1, 16):
+         cache_checksums.assert_any_call(
+-            prefix="{:03x}".format(i), progress_callback=CallableOrNone
++            prefix=f"{i:03x}", progress_callback=CallableOrNone
+         )
+     for i in range(1, 256):
+         cache_checksums.assert_any_call(
+-            prefix="{:02x}".format(i), progress_callback=CallableOrNone
++            prefix=f"{i:02x}", progress_callback=CallableOrNone
+         )
+ 
+     # default traverse (small remote)
+diff --git a/tests/unit/remote/test_gdrive.py b/tests/unit/remote/test_gdrive.py
+index be2fb0150..aeda479c1 100644
+--- a/tests/unit/remote/test_gdrive.py
++++ b/tests/unit/remote/test_gdrive.py
+@@ -9,7 +9,7 @@ USER_CREDS_TOKEN_REFRESH_ERROR = '{"access_token": "", "client_id": "", "client_
+ USER_CREDS_MISSED_KEY_ERROR = "{}"
+ 
+ 
+-class TestRemoteGDrive(object):
++class TestRemoteGDrive:
+     CONFIG = {
+         "url": "gdrive://root/data",
+         "gdrive_client_id": "client",
+diff --git a/tests/unit/remote/test_gs.py b/tests/unit/remote/test_gs.py
+index 34ea34734..3f8643011 100644
+--- a/tests/unit/remote/test_gs.py
++++ b/tests/unit/remote/test_gs.py
+@@ -6,7 +6,7 @@ from dvc.remote.gs import GSRemote, dynamic_chunk_size
+ 
+ BUCKET = "bucket"
+ PREFIX = "prefix"
+-URL = "gs://{}/{}".format(BUCKET, PREFIX)
++URL = f"gs://{BUCKET}/{PREFIX}"
+ CREDENTIALPATH = "/path/to/gcp_credentials.json"
+ PROJECT = "PROJECT"
+ CONFIG = {
+diff --git a/tests/unit/remote/test_http.py b/tests/unit/remote/test_http.py
+index 48449f1a7..06998f22f 100644
+--- a/tests/unit/remote/test_http.py
++++ b/tests/unit/remote/test_http.py
+@@ -8,7 +8,7 @@ from tests.utils.httpd import StaticFileServer
+ 
+ def test_download_fails_on_error_code(dvc):
+     with StaticFileServer() as httpd:
+-        url = "http://localhost:{}/".format(httpd.server_port)
++        url = f"http://localhost:{httpd.server_port}/"
+         config = {"url": url}
+ 
+         remote = HTTPRemote(dvc, config)
+diff --git a/tests/unit/remote/test_oss.py b/tests/unit/remote/test_oss.py
+index 6cd8d0b8a..d6bd51539 100644
+--- a/tests/unit/remote/test_oss.py
++++ b/tests/unit/remote/test_oss.py
+@@ -8,7 +8,7 @@ key_secret = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsu"
+ 
+ def test_init(dvc):
+     prefix = "some/prefix"
+-    url = "oss://{}/{}".format(bucket_name, prefix)
++    url = f"oss://{bucket_name}/{prefix}"
+     config = {
+         "url": url,
+         "oss_key_id": key_id,
+diff --git a/tests/unit/remote/test_remote.py b/tests/unit/remote/test_remote.py
+index d4f512a1b..58dd29636 100644
+--- a/tests/unit/remote/test_remote.py
++++ b/tests/unit/remote/test_remote.py
+@@ -31,7 +31,7 @@ def test_remote_without_checksum_jobs_default(dvc):
+ 
+ @pytest.mark.parametrize("remote_cls", [GSRemote, S3Remote])
+ def test_makedirs_not_create_for_top_level_path(remote_cls, dvc, mocker):
+-    url = "{.scheme}://bucket/".format(remote_cls)
++    url = f"{remote_cls.scheme}://bucket/"
+     remote = remote_cls(dvc, {"url": url})
+     mocked_client = mocker.PropertyMock()
+     # we use remote clients with same name as scheme to interact with remote
+diff --git a/tests/unit/remote/test_remote_dir.py b/tests/unit/remote/test_remote_dir.py
+index 22b4918b4..9a0f60d4d 100644
+--- a/tests/unit/remote/test_remote_dir.py
++++ b/tests/unit/remote/test_remote_dir.py
+@@ -1,4 +1,3 @@
+-# -*- coding: utf-8 -*-
+ import os
+ 
+ import pytest
+diff --git a/tests/unit/remote/test_s3.py b/tests/unit/remote/test_s3.py
+index c32091e0a..bf726db61 100644
+--- a/tests/unit/remote/test_s3.py
++++ b/tests/unit/remote/test_s3.py
+@@ -5,7 +5,7 @@ from dvc.remote.s3 import S3Remote
+ 
+ bucket_name = "bucket-name"
+ prefix = "some/prefix"
+-url = "s3://{}/{}".format(bucket_name, prefix)
++url = f"s3://{bucket_name}/{prefix}"
+ 
+ 
+ @pytest.fixture(autouse=True)
+@@ -53,3 +53,8 @@ def test_grants_mutually_exclusive_acl_error(dvc, grants):
+ 
+         with pytest.raises(ConfigError):
+             S3Remote(dvc, config)
++
++
++def test_sse_kms_key_id(dvc):
++    remote = S3Remote(dvc, {"url": url, "sse_kms_key_id": "key"})
++    assert remote.extra_args["SSEKMSKeyId"] == "key"
+diff --git a/tests/unit/repo/plots/__init__.py b/tests/unit/repo/plots/__init__.py
+new file mode 100644
+index 000000000..e69de29bb
+diff --git a/tests/unit/test_plot.py b/tests/unit/repo/plots/test_data.py
+similarity index 94%
+rename from tests/unit/test_plot.py
+rename to tests/unit/repo/plots/test_data.py
+index 016f63d7c..687d62979 100644
+--- a/tests/unit/test_plot.py
++++ b/tests/unit/repo/plots/test_data.py
+@@ -2,7 +2,7 @@ from collections import OrderedDict
+ 
+ import pytest
+ 
+-from dvc.repo.plot.data import _apply_path, _find_data, _lists
++from dvc.repo.plots.data import _apply_path, _find_data, _lists
+ 
+ 
+ @pytest.mark.parametrize(
+diff --git a/tests/unit/repo/plots/test_diff.py b/tests/unit/repo/plots/test_diff.py
+new file mode 100644
+index 000000000..2b16e71e4
+--- /dev/null
++++ b/tests/unit/repo/plots/test_diff.py
+@@ -0,0 +1,16 @@
++import pytest
++
++from dvc.repo.plots.diff import _revisions
++
++
++@pytest.mark.parametrize(
++    "arg_revisions,is_dirty,expected_revisions",
++    [
++        ([], False, ["working tree"]),
++        ([], True, ["HEAD", "working tree"]),
++        (["v1", "v2", "working tree"], False, ["v1", "v2", "working tree"]),
++        (["v1", "v2", "working tree"], True, ["v1", "v2", "working tree"]),
++    ],
++)
++def test_revisions(mocker, arg_revisions, is_dirty, expected_revisions):
++    assert _revisions(arg_revisions, is_dirty) == expected_revisions
+diff --git a/tests/unit/repo/test_repo_tree.py b/tests/unit/repo/test_repo_tree.py
+new file mode 100644
+index 000000000..0dd6631a6
+--- /dev/null
++++ b/tests/unit/repo/test_repo_tree.py
+@@ -0,0 +1,119 @@
++import os
++import shutil
++
++from dvc.repo.tree import RepoTree
++
++
++def test_exists(tmp_dir, dvc):
++    tmp_dir.gen("foo", "foo")
++    dvc.add("foo")
++    (tmp_dir / "foo").unlink()
++
++    tree = RepoTree(dvc)
++    assert tree.exists("foo")
++
++
++def test_open(tmp_dir, dvc):
++    tmp_dir.gen("foo", "foo")
++    dvc.add("foo")
++    (tmp_dir / "foo").unlink()
++
++    tree = RepoTree(dvc)
++    with tree.open("foo", "r") as fobj:
++        assert fobj.read() == "foo"
++
++
++def test_open_in_history(tmp_dir, scm, dvc):
++    tmp_dir.gen("foo", "foo")
++    dvc.add("foo")
++    dvc.scm.add(["foo.dvc", ".gitignore"])
++    dvc.scm.commit("foo")
++
++    tmp_dir.gen("foo", "foofoo")
++    dvc.add("foo")
++    dvc.scm.add(["foo.dvc", ".gitignore"])
++    dvc.scm.commit("foofoo")
++
++    for rev in dvc.brancher(revs=["HEAD~1"]):
++        if rev == "working tree":
++            continue
++
++        tree = RepoTree(dvc)
++        with tree.open("foo", "r") as fobj:
++            assert fobj.read() == "foo"
++
++
++def test_isdir_isfile(tmp_dir, dvc):
++    tmp_dir.gen({"datafile": "data", "datadir": {"foo": "foo", "bar": "bar"}})
++
++    tree = RepoTree(dvc)
++    assert tree.isdir("datadir")
++    assert not tree.isfile("datadir")
++    assert not tree.isdvc("datadir")
++    assert not tree.isdir("datafile")
++    assert tree.isfile("datafile")
++    assert not tree.isdvc("datafile")
++
++    dvc.add(["datadir", "datafile"])
++    shutil.rmtree(tmp_dir / "datadir")
++    (tmp_dir / "datafile").unlink()
++
++    assert tree.isdir("datadir")
++    assert not tree.isfile("datadir")
++    assert tree.isdvc("datadir")
++    assert not tree.isdir("datafile")
++    assert tree.isfile("datafile")
++    assert tree.isdvc("datafile")
++
++
++def test_isdir_mixed(tmp_dir, dvc):
++    tmp_dir.gen({"dir": {"foo": "foo", "bar": "bar"}})
++
++    dvc.add(str(tmp_dir / "dir" / "foo"))
++
++    tree = RepoTree(dvc)
++    assert tree.isdir("dir")
++    assert not tree.isfile("dir")
++
++
++def test_walk(tmp_dir, dvc):
++    tmp_dir.gen(
++        {
++            "dir": {
++                "subdir1": {"foo1": "foo1", "bar1": "bar1"},
++                "subdir2": {"foo2": "foo2"},
++            }
++        }
++    )
++    dvc.add(str(tmp_dir / "dir"), recursive=True)
++    tmp_dir.gen({"dir": {"foo": "foo", "bar": "bar"}})
++    tree = RepoTree(dvc)
++
++    expected = [
++        os.path.join("dir", "subdir1"),
++        os.path.join("dir", "subdir2"),
++        os.path.join("dir", "subdir1", "foo1"),
++        os.path.join("dir", "subdir1", "foo1.dvc"),
++        os.path.join("dir", "subdir1", "bar1"),
++        os.path.join("dir", "subdir1", "bar1.dvc"),
++        os.path.join("dir", "subdir2", "foo2"),
++        os.path.join("dir", "subdir2", "foo2.dvc"),
++        os.path.join("dir", "foo"),
++        os.path.join("dir", "bar"),
++    ]
++
++    actual = []
++    for root, dirs, files in tree.walk("dir"):
++        for entry in dirs + files:
++            actual.append(os.path.join(root, entry))
++
++    assert set(actual) == set(expected)
++    assert len(actual) == len(expected)
++
++
++def test_isdvc(tmp_dir, dvc):
++    tmp_dir.gen({"foo": "foo", "bar": "bar"})
++    dvc.add("foo")
++    tree = RepoTree(dvc)
++    assert tree.isdvc("foo")
++    assert not tree.isdvc("bar")
+diff --git a/tests/unit/repo/test_tree.py b/tests/unit/repo/test_tree.py
+index f99b8f582..91278958d 100644
+--- a/tests/unit/repo/test_tree.py
++++ b/tests/unit/repo/test_tree.py
+@@ -1,7 +1,8 @@
+ import os
+ import shutil
+ 
+-from dvc.compat import fspath_py35
++import pytest
++
+ from dvc.repo.tree import DvcTree
+ 
+ 
+@@ -54,7 +55,7 @@ def test_isdir_isfile(tmp_dir, dvc):
+     assert not tree.isfile("datafile")
+ 
+     dvc.add(["datadir", "datafile"])
+-    shutil.rmtree(fspath_py35(tmp_dir / "datadir"))
++    shutil.rmtree(tmp_dir / "datadir")
+     (tmp_dir / "datafile").unlink()
+ 
+     assert tree.isdir("datadir")
+@@ -107,6 +108,50 @@ def test_walk(tmp_dir, dvc):
+     assert len(actual) == len(expected)
+ 
+ 
++@pytest.mark.parametrize(
++    "fetch,expected",
++    [
++        (False, []),
++        (
++            True,
++            [
++                "dir/subdir1",
++                "dir/subdir2",
++                "dir/subdir1/foo1",
++                "dir/subdir1/bar1",
++                "dir/subdir2/foo2",
++                "dir/foo",
++                "dir/bar",
++            ],
++        ),
++    ],
++)
++def test_walk_dir(tmp_dir, dvc, fetch, expected):
++    tmp_dir.gen(
++        {
++            "dir": {
++                "subdir1": {"foo1": "foo1", "bar1": "bar1"},
++                "subdir2": {"foo2": "foo2"},
++                "foo": "foo",
++                "bar": "bar",
++            }
++        }
++    )
++
++    dvc.add("dir")
++    tree = DvcTree(dvc, fetch=fetch)
++
++    expected = [str(tmp_dir / path) for path in expected]
++
++    actual = []
++    for root, dirs, files in tree.walk("dir"):
++        for entry in dirs + files:
++            actual.append(os.path.join(root, entry))
++
++    assert set(actual) == set(expected)
++    assert len(actual) == len(expected)
++
++
+ def test_isdvc(tmp_dir, dvc):
+     tmp_dir.gen({"foo": "foo", "bar": "bar"})
+     dvc.add("foo")
+diff --git a/tests/unit/scm/test_git.py b/tests/unit/scm/test_git.py
+index 90337e0f9..fe9dfe992 100644
+--- a/tests/unit/scm/test_git.py
++++ b/tests/unit/scm/test_git.py
+@@ -1,6 +1,5 @@
+ import os
+ 
+-from dvc.compat import fspath
+ from tests.basic_env import TestDvcGit
+ 
+ 
+@@ -23,7 +22,7 @@ def test_walk_with_submodules(tmp_dir, scm, git_dir):
+         {"foo": "foo", "bar": "bar", "dir": {"data": "data"}},
+         commit="add dir and files",
+     )
+-    scm.repo.create_submodule("submodule", "submodule", url=fspath(git_dir))
++    scm.repo.create_submodule("submodule", "submodule", url=os.fspath(git_dir))
+     scm.commit("added submodule")
+ 
+     files = []
+@@ -70,3 +69,17 @@ def test_is_tracked_unicode(tmp_dir, scm):
+     tmp_dir.gen("ṳṋṭṝḁḉḵḗḋ", "untracked")
+     assert scm.is_tracked("ṭṝḁḉḵḗḋ")
+     assert not scm.is_tracked("ṳṋṭṝḁḉḵḗḋ")
++
++
++def test_no_commits(tmp_dir):
++    from tests.dir_helpers import git_init
++    from dvc.scm.git import Git
++
++    git_init(".")
++    assert Git().no_commits
++
++    tmp_dir.gen("foo", "foo")
++    Git().add(["foo"])
++    Git().commit("foo")
++
++    assert not Git().no_commits
+diff --git a/tests/unit/stage/test_run.py b/tests/unit/stage/test_run.py
+new file mode 100644
+index 000000000..b0595051a
+--- /dev/null
++++ b/tests/unit/stage/test_run.py
+@@ -0,0 +1,10 @@
++import logging
++
++from dvc.stage import Stage
++from dvc.stage.run import run_stage
++
++
++def test_run_stage_dry(caplog):
++    with caplog.at_level(level=logging.INFO, logger="dvc"):
++        run_stage(Stage(None, cmd="mycmd arg1 arg2"), dry=True)
++        assert caplog.messages == ["Running command:\n\tmycmd arg1 arg2"]
+diff --git a/tests/unit/test_stage.py b/tests/unit/stage/test_stage.py
+similarity index 76%
+rename from tests/unit/test_stage.py
+rename to tests/unit/stage/test_stage.py
+index dcfb771c4..05e308aed 100644
+--- a/tests/unit/test_stage.py
++++ b/tests/unit/stage/test_stage.py
+@@ -23,7 +23,7 @@ def test_stage_checksum():
+     stage = Stage(None, "path")
+ 
+     with mock.patch.object(stage, "dumpd", return_value=TEST_STAGE_DICT):
+-        assert stage._compute_md5() == "e9521a22111493406ea64a88cda63e0b"
++        assert stage.compute_md5() == "e9521a22111493406ea64a88cda63e0b"
+ 
+ 
+ def test_wdir_default_ignored():
+@@ -31,7 +31,7 @@ def test_wdir_default_ignored():
+     d = dict(TEST_STAGE_DICT, wdir=".")
+ 
+     with mock.patch.object(stage, "dumpd", return_value=d):
+-        assert stage._compute_md5() == "e9521a22111493406ea64a88cda63e0b"
++        assert stage.compute_md5() == "e9521a22111493406ea64a88cda63e0b"
+ 
+ 
+ def test_wdir_non_default_is_not_ignored():
+@@ -39,7 +39,7 @@ def test_wdir_non_default_is_not_ignored():
+     d = dict(TEST_STAGE_DICT, wdir="..")
+ 
+     with mock.patch.object(stage, "dumpd", return_value=d):
+-        assert stage._compute_md5() == "2ceba15e87f6848aa756502c1e6d24e9"
++        assert stage.compute_md5() == "2ceba15e87f6848aa756502c1e6d24e9"
+ 
+ 
+ def test_meta_ignored():
+@@ -47,7 +47,7 @@ def test_meta_ignored():
+     d = dict(TEST_STAGE_DICT, meta={"author": "Suor"})
+ 
+     with mock.patch.object(stage, "dumpd", return_value=d):
+-        assert stage._compute_md5() == "e9521a22111493406ea64a88cda63e0b"
++        assert stage.compute_md5() == "e9521a22111493406ea64a88cda63e0b"
+ 
+ 
+ class TestPathConversion(TestCase):
+@@ -106,29 +106,43 @@ def test_always_changed(dvc):
+ 
+ def test_stage_cache(tmp_dir, dvc, run_copy, mocker):
+     tmp_dir.gen("dep", "dep")
+-    stage = run_copy("dep", "out", single_stage=True)
++    tmp_dir.gen(
++        "script.py",
++        (
++            'open("out", "w+").write("out"); '
++            'open("out_no_cache", "w+").write("out_no_cache")'
++        ),
++    )
++    stage = dvc.run(
++        cmd="python script.py",
++        deps=["script.py", "dep"],
++        outs=["out"],
++        outs_no_cache=["out_no_cache"],
++        single_stage=True,
++    )
+ 
+     with dvc.lock, dvc.state:
+         stage.remove(remove_outs=True, force=True)
+ 
+     assert not (tmp_dir / "out").exists()
++    assert not (tmp_dir / "out_no_cache").exists()
+     assert not (tmp_dir / "out.dvc").exists()
+ 
+     cache_dir = os.path.join(
+         dvc.stage_cache.cache_dir,
+-        "75",
+-        "75f8a9097d76293ff4b3684d52e4ad0e83686d31196f27eb0b2ea9fd5085565e",
++        "10",
++        "10b45372fdf4ec14d3f779c5b256378d7a12780e4c7f549a44138e492f098bfe",
+     )
+     cache_file = os.path.join(
+         cache_dir,
+-        "c1747e52065bc7801262fdaed4d63f5775e5da304008bd35e2fea4e6b1ccb272",
++        "bb32e04c6da96a7192513390acedbe4cd6123f8fe5b0ba5fffe39716fe87f6f4",
+     )
+ 
+     assert os.path.isdir(cache_dir)
+     assert os.listdir(cache_dir) == [os.path.basename(cache_file)]
+     assert os.path.isfile(cache_file)
+ 
+-    run_spy = mocker.spy(stage, "_run")
++    run_spy = mocker.patch("dvc.stage.run.cmd_run")
+     checkout_spy = mocker.spy(stage, "checkout")
+     with dvc.lock, dvc.state:
+         stage.run()
+@@ -137,4 +151,6 @@ def test_stage_cache(tmp_dir, dvc, run_copy, mocker):
+     assert checkout_spy.call_count == 1
+ 
+     assert (tmp_dir / "out").exists()
+-    assert (tmp_dir / "out").read_text() == "dep"
++    assert (tmp_dir / "out_no_cache").exists()
++    assert (tmp_dir / "out").read_text() == "out"
++    assert (tmp_dir / "out_no_cache").read_text() == "out_no_cache"
+diff --git a/tests/unit/test_rwlock.py b/tests/unit/test_rwlock.py
+index 4744dc09a..3d5cfb8e0 100644
+--- a/tests/unit/test_rwlock.py
++++ b/tests/unit/test_rwlock.py
+@@ -2,7 +2,6 @@ import os
+ 
+ import pytest
+ 
+-from dvc.compat import fspath
+ from dvc.lock import LockError
+ from dvc.path_info import PathInfo
+ from dvc.rwlock import (
+@@ -14,7 +13,7 @@ from dvc.rwlock import (
+ 
+ 
+ def test_rwlock(tmp_path):
+-    path = fspath(tmp_path)
++    path = os.fspath(tmp_path)
+     foo = PathInfo("foo")
+ 
+     with rwlock(path, "cmd1", [foo], []):
+@@ -34,7 +33,7 @@ def test_rwlock(tmp_path):
+ 
+ 
+ def test_rwlock_reentrant(tmp_path):
+-    path = fspath(tmp_path)
++    path = os.fspath(tmp_path)
+     foo = PathInfo("foo")
+ 
+     with rwlock(path, "cmd1", [], [foo]):
+@@ -57,7 +56,7 @@ def test_rwlock_reentrant(tmp_path):
+ 
+ 
+ def test_rwlock_subdirs(tmp_path):
+-    path = fspath(tmp_path)
++    path = os.fspath(tmp_path)
+     foo = PathInfo("foo")
+     subfoo = PathInfo("foo/subfoo")
+ 
+@@ -82,7 +81,7 @@ def test_rwlock_subdirs(tmp_path):
+ 
+ 
+ def test_broken_rwlock(tmp_path):
+-    dir_path = fspath(tmp_path)
++    dir_path = os.fspath(tmp_path)
+     path = tmp_path / "rwlock"
+ 
+     path.write_text('{"broken": "format"}', encoding="utf-8")
+diff --git a/tests/unit/test_updater.py b/tests/unit/test_updater.py
+index 6ddc1db46..2b9926037 100644
+--- a/tests/unit/test_updater.py
++++ b/tests/unit/test_updater.py
+@@ -25,7 +25,7 @@ def test_fetch(mock_get, updater):
+     mock_get.assert_called_once_with(Updater.URL, timeout=Updater.TIMEOUT_GET)
+     assert os.path.isfile(updater.updater_file)
+ 
+-    with open(updater.updater_file, "r") as fobj:
++    with open(updater.updater_file) as fobj:
+         info = json.load(fobj)
+ 
+     assert info["version"] == __version__
+diff --git a/tests/unit/utils/test_fs.py b/tests/unit/utils/test_fs.py
+index c38634f63..f69e31d28 100644
+--- a/tests/unit/utils/test_fs.py
++++ b/tests/unit/utils/test_fs.py
+@@ -6,7 +6,6 @@ import pytest
+ from mock import patch
+ 
+ import dvc
+-from dvc.compat import fspath
+ from dvc.ignore import CleanTree
+ from dvc.path_info import PathInfo
+ from dvc.scm.tree import WorkingTree
+@@ -15,6 +14,7 @@ from dvc.utils import relpath
+ from dvc.utils.fs import (
+     BasePathNotInCheckedPathException,
+     contains_symlink_up_to,
++    copy_fobj_to_file,
+     copyfile,
+     get_inode,
+     get_mtime_and_size,
+@@ -156,11 +156,11 @@ def test_move(tmp_dir):
+     assert not os.path.isfile(src)
+     assert len(os.listdir(dest)) == 1
+ 
+-    os.makedirs(dest_info.fspath)
+-    assert len(os.listdir(dest_info.fspath)) == 0
++    os.makedirs(dest_info)
++    assert len(os.listdir(dest_info)) == 0
+     move(src_info, dest_info)
+-    assert not os.path.isfile(src_info.fspath)
+-    assert len(os.listdir(dest_info.fspath)) == 1
++    assert not os.path.isfile(src_info)
++    assert len(os.listdir(dest_info)) == 1
+ 
+ 
+ def test_remove(tmp_dir):
+@@ -172,7 +172,7 @@ def test_remove(tmp_dir):
+     assert not os.path.isfile(path)
+ 
+     remove(path_info)
+-    assert not os.path.isfile(path_info.fspath)
++    assert not os.path.isfile(path_info)
+ 
+ 
+ def test_path_isin_positive():
+@@ -217,14 +217,14 @@ def test_path_isin_with_absolute_path():
+ 
+ 
+ def test_makedirs(tmp_dir):
+-    path = os.path.join(fspath(tmp_dir), "directory")
+-    path_info = PathInfo(os.path.join(fspath(tmp_dir), "another", "directory"))
++    path = os.path.join(tmp_dir, "directory")
++    path_info = PathInfo(os.path.join(tmp_dir, "another", "directory"))
+ 
+     makedirs(path)
+     assert os.path.isdir(path)
+ 
+     makedirs(path_info)
+-    assert os.path.isdir(path_info.fspath)
++    assert os.path.isdir(path_info)
+ 
+ 
+ @pytest.mark.parametrize("path", ["file", "dir"])
+@@ -251,14 +251,24 @@ def test_copyfile(path, tmp_dir):
+         assert filecmp.cmp(src, dest, shallow=False)
+ 
+     copyfile(src_info, dest_info)
+-    if os.path.isdir(dest_info.fspath):
++    if os.path.isdir(dest_info):
+         assert filecmp.cmp(
+-            src_info.fspath,
+-            os.path.join(dest_info.fspath, os.path.basename(src_info.fspath)),
++            src_info,
++            os.path.join(dest_info, os.path.basename(src_info)),
+             shallow=False,
+         )
+     else:
+-        assert filecmp.cmp(src_info.fspath, dest_info.fspath, shallow=False)
++        assert filecmp.cmp(src_info, dest_info, shallow=False)
++
++
++def test_copy_fobj_to_file(tmp_dir):
++    tmp_dir.gen({"foo": "foo content"})
++    src = tmp_dir / "foo"
++    dest = "path"
++
++    with open(src, "rb") as fobj:
++        copy_fobj_to_file(fobj, dest)
++    assert filecmp.cmp(src, dest)
+ 
+ 
+ def test_walk_files(tmp_dir):
+diff --git a/tests/unit/utils/test_http.py b/tests/unit/utils/test_http.py
+index 37618be67..cb45e298a 100644
+--- a/tests/unit/utils/test_http.py
++++ b/tests/unit/utils/test_http.py
+@@ -29,7 +29,7 @@ def test_open_url(tmp_path, monkeypatch):
+     (tmp_path / "sample.txt").write_text(text * 2)
+ 
+     with StaticFileServer() as httpd:
+-        url = "http://localhost:{}/sample.txt".format(httpd.server_port)
++        url = f"http://localhost:{httpd.server_port}/sample.txt"
+         with open_url(url) as fd:
+             # Test various .read() variants
+             assert fd.read(len(text)) == text
+diff --git a/tests/utils/__init__.py b/tests/utils/__init__.py
+index 9e5448abb..060315e95 100644
+--- a/tests/utils/__init__.py
++++ b/tests/utils/__init__.py
+@@ -6,7 +6,7 @@ from dvc.scm import Git
+ 
+ 
+ def get_gitignore_content():
+-    with open(Git.GITIGNORE, "r") as gitignore:
++    with open(Git.GITIGNORE) as gitignore:
+         return gitignore.read().splitlines()
+ 
+ 
+diff --git a/tests/utils/httpd.py b/tests/utils/httpd.py
+index d89070b78..d70675280 100644
+--- a/tests/utils/httpd.py
++++ b/tests/utils/httpd.py
+@@ -21,7 +21,7 @@ class TestRequestHandler(RangeRequestHandler):
+             file = self.translate_path(self.path)
+ 
+             if not os.path.isdir(file) and os.path.exists(file):
+-                with open(file, "r") as fd:
++                with open(file) as fd:
+                     encoded_text = fd.read().encode("utf8")
+                     checksum = hashlib.md5(encoded_text).hexdigest()
+                     self.send_header(self.checksum_header, checksum)
+

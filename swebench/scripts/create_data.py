@@ -21,6 +21,7 @@ _repo_cache = {}
 def parse_args():
     parser = argparse.ArgumentParser(description="Extracts release notes and diff from GitHub and outputs a YAML file.")
     parser.add_argument('compare_url', type=str, help='GitHub compare URL (e.g., https://github.com/org/repo/compare/v1..v2)')
+    parser.add_argument('--end_release_note_txt', type=str, default='None', help='Your collected release note, this must be a txt file')
     parser.add_argument('--output-dir', type=str, required=True, help='Directory to output the YAML file')
     return parser.parse_args()
 
@@ -213,7 +214,12 @@ def main():
     end_commit = compare_data['merge_base_commit']['sha'] if 'merge_base_commit' in compare_data else compare_data['commits'][-1]['sha'] if compare_data['commits'] else None
     environment_setup_commit = base_commit  # Placeholder, can be customized
     commits = compare_data.get('commits', [])
-    release_note = fetch_release_note(owner, repo, end)
+    if args.end_release_note_txt == 'None':
+        release_note = fetch_release_note(owner, repo, end)
+    else:
+        with open(args.end_release_note_txt, "r", encoding="utf-8") as f:
+            release_note = f.read()
+
     prs = fetch_prs_from_commits(owner, repo, commits)
     # Add is_mentioned_in_release_note for each PR
     pr_numbers_in_history = set()

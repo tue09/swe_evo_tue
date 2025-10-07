@@ -1,0 +1,13 @@
+3.9.0
+
+## What's Changed
+
+### 🚀 New Features and Enhancements
+
+- deps: bump dvc-data to 0.27.1 by [@efiop](https://github.com/efiop) in [#9774](https://github.com/iterative/dvc/pull/9774)  
+- api: open/read: introduce remote_config by [@efiop](https://github.com/efiop) in [#9766](https://github.com/iterative/dvc/pull/9766)
+
+**Full Changelog**: [3.8.1...3.9.0](https://github.com/iterative/dvc/compare/3.8.1...3.9.0)
+
+### Contributors
+[@efiop](https://github.com/efiop)
